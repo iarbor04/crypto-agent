@@ -8,6 +8,7 @@ import type { AgentRun } from "@/lib/types";
 import type { Health } from "@/lib/health";
 
 type SettingsView = { chatId: string; sendEmptyDigest: boolean; botTokenMask: string; hasBotToken: boolean };
+type Detected = { bot: { username: string; name: string }; chats: { id: string; title: string; type: string }[] };
 
 const CRON = `0 9 * * *  cd /path/to/crypto-agent && node scripts/run-agent.mjs
 0 21 * * * cd /path/to/crypto-agent && node scripts/run-agent.mjs`;
@@ -24,6 +25,7 @@ export default function AgentPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [detected, setDetected] = useState<Detected | null>(null);
 
   const loadAll = useCallback(async () => {
     const [s, h, hl] = await Promise.all([
@@ -59,6 +61,34 @@ export default function AgentPage() {
       setToken("");
       setMsg({ text: "Настройки сохранены", ok: true });
       await loadAll();
+    } catch (e) {
+      setMsg({ text: e instanceof Error ? e.message : String(e), ok: false });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function detectBot() {
+    setBusy("detect");
+    setMsg(null);
+    setDetected(null);
+    try {
+      const res = await fetch("/api/telegram/detect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(token ? { botToken: token } : {}),
+      });
+      const json = (await res.json()) as Detected & { error?: string; chatsError?: string };
+      if (json.error) throw new Error(json.error);
+      setDetected(json);
+      if (!json.chats.length) {
+        setMsg({
+          text: `Бот @${json.bot.username} на связи, но ему ещё никто не писал. Напишите ему /start в личку (или добавьте админом в канал и отправьте туда сообщение) и нажмите ещё раз.`,
+          ok: false,
+        });
+      } else {
+        setMsg({ text: `Бот @${json.bot.username} на связи. Выберите чат ниже.`, ok: true });
+      }
     } catch (e) {
       setMsg({ text: e instanceof Error ? e.message : String(e), ok: false });
     } finally {
@@ -140,9 +170,31 @@ export default function AgentPage() {
               />
             </label>
             <label className="field">
-              CHAT ID ИЛИ @КАНАЛ — бота добавить админом канала
+              CHAT ID ИЛИ @КАНАЛ — можно определить кнопкой ниже
               <input value={chatId} placeholder="@my_portfolio или 123456789" onChange={(e) => setChatId(e.target.value)} />
             </label>
+
+            <button className="ghost-button" style={{ width: "100%", marginBottom: 12 }} onClick={detectBot} disabled={busy === "detect"}>
+              {busy === "detect" ? "Спрашиваю Telegram…" : "Проверить бота и найти чат"}
+            </button>
+
+            {!!detected?.chats.length && (
+              <div className="candidate-list" style={{ marginBottom: 12 }}>
+                {detected.chats.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => {
+                      setChatId(c.id);
+                      setMsg({ text: `Подставил chat id ${c.id}. Нажмите «Сохранить», потом «Тест сообщения».`, ok: true });
+                    }}
+                  >
+                    <b style={{ fontWeight: 600 }}>{c.title}</b>
+                    <span style={{ color: "#9aa1af" }}>{c.type}</span>
+                    <small style={{ marginLeft: "auto" }}>{c.id}</small>
+                  </button>
+                ))}
+              </div>
+            )}
             <label className="checkbox">
               <input type="checkbox" checked={empty} onChange={(e) => setEmpty(e.target.checked)} />
               <span>
