@@ -40,7 +40,7 @@ export default function RisksPage() {
 
       {data && (
         <>
-          <div className="metric-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+          <div className="metric-row cols-3">
             <article className="metric-card">
               <span>Под риском</span>
               <strong className="mono" style={{ color: atRiskValue ? "var(--red)" : "var(--green)" }}>

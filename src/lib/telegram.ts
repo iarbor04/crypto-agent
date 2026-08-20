@@ -19,6 +19,8 @@ export type AiSettings = {
 };
 
 export type Settings = {
+  /** как часто обновлять рыночные данные, минут */
+  refreshMinutes: number;
   botToken: string;
   chatId: string;
   /** присылать сводку даже когда важного ничего нет */
@@ -62,6 +64,7 @@ export async function getSettings(): Promise<Settings> {
     botToken: saved.botToken || process.env.TELEGRAM_BOT_TOKEN || "",
     chatId: saved.chatId || process.env.TELEGRAM_CHAT_ID || "",
     sendEmptyDigest: saved.sendEmptyDigest ?? false,
+    refreshMinutes: Math.max(5, Math.min(Number(saved.refreshMinutes ?? 30), 240)),
     schedule: normalizeSchedule(saved.schedule),
     ai: {
       enabled: saved.ai?.enabled ?? true,
@@ -84,6 +87,7 @@ export async function saveSettings(patch: Partial<Settings>): Promise<Settings> 
     chatId: typeof patch.chatId === "string" ? patch.chatId.trim() : current.chatId ?? "",
     sendEmptyDigest:
       typeof patch.sendEmptyDigest === "boolean" ? patch.sendEmptyDigest : current.sendEmptyDigest ?? false,
+    refreshMinutes: Math.max(5, Math.min(Number(patch.refreshMinutes ?? current.refreshMinutes ?? 30), 240)),
     schedule: normalizeSchedule({ ...current.schedule, ...patch.schedule }),
     ai: {
       enabled: patch.ai?.enabled ?? current.ai?.enabled ?? true,

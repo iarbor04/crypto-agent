@@ -181,6 +181,8 @@ export type TokenAnalysis = {
 
 export type Analysis = {
   generatedAt: string;
+  /** через сколько минут данные считаются устаревшими */
+  refreshMinutes: number;
   totalValueUsd: number;
   change24hUsd: number;
   potentialYearlyUsd: number;

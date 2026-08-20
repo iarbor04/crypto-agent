@@ -85,7 +85,7 @@ export default function PortfolioPage() {
             <Allocation tokens={data.tokens} fearGreed={data.context?.fearGreed} />
           </div>
 
-          <div className="metric-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+          <div className="metric-row cols-3">
             <article className="metric-card">
               <span>Можно заработать на стейкинге</span>
               <strong className="mono" style={{ color: "var(--green)" }}>
@@ -154,7 +154,7 @@ export default function PortfolioPage() {
           )}
 
           {!!data.tokens.length && view === "table" && (
-            <div className="card">
+            <div className="card table-card">
               <div className="table-head">
                 <span>Токен</span>
                 <span className="cell-right">Сколько у вас</span>

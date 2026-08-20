@@ -402,7 +402,7 @@ function WhyTab({ token }: { token: TokenAnalysis }) {
       )}
 
       {m && (
-        <div className="drawer-stats" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginTop: 22 }}>
+        <div className="drawer-stats cols-3" style={{ marginTop: 22 }}>
           <div>
             <span>Капитализация</span>
             <strong className="mono">${short(m.marketCap)}</strong>

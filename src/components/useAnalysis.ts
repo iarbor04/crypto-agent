@@ -62,6 +62,16 @@ export function useAnalysis() {
 
   useEffect(() => {
     loadAnalysis(false);
+    // данные обновляются на фоне с периодом из настроек (по умолчанию 30 минут)
+    const timer = setInterval(
+      () => {
+        const minutes = state.data?.refreshMinutes ?? 30;
+        const age = state.data ? Date.now() - new Date(state.data.generatedAt).getTime() : Infinity;
+        if (age >= minutes * 60_000) loadAnalysis(true);
+      },
+      60_000,
+    );
+    return () => clearInterval(timer);
   }, []);
 
   return {

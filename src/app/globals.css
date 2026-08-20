@@ -2761,3 +2761,107 @@ a {
 .holding-grid {
   margin-bottom: 26px;
 }
+
+/* ————— Правки адаптива ————— */
+
+/* Три колонки как класс, а не инлайн-стиль: инлайн перебивал медиазапросы
+   и на телефоне метрики схлопывались в 110px. */
+.metric-row.cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.drawer-stats.cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* Таблица позиций шире контента на средних экранах — прокручиваем её саму,
+   а не всю страницу. */
+.table-card {
+  overflow-x: auto;
+}
+
+.table-card .table-head,
+.table-card .table-row {
+  min-width: 940px;
+}
+
+@media (max-width: 1400px) {
+  .col-spark {
+    display: none;
+  }
+  .table-head,
+  .table-row {
+    grid-template-columns: minmax(170px, 1.4fr) 130px 96px 120px 140px 120px 96px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .col-delta {
+    display: none;
+  }
+  .table-head,
+  .table-row {
+    grid-template-columns: minmax(160px, 1.4fr) 126px 116px 138px 116px 92px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .metric-row.cols-3 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .metric-row,
+  .metric-row.cols-3,
+  .drawer-stats,
+  .drawer-stats.cols-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .table-card {
+    overflow-x: visible;
+  }
+
+  .table-card .table-head,
+  .table-card .table-row {
+    min-width: 0;
+  }
+
+  /* На узком экране в шкале риска подписи не читаются — оставляем активную */
+  .risk-scale-labels span {
+    font-size: 8px;
+    opacity: 0;
+  }
+
+  .risk-scale-labels span.on {
+    opacity: 1;
+    font-size: 10px;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .risk-verdict {
+    gap: 12px;
+  }
+
+  .risk-verdict h3 {
+    font-size: 15px;
+  }
+
+  .page-header h1 {
+    font-size: 26px;
+  }
+
+  .hero-value {
+    font-size: 27px;
+  }
+
+  .token-earn {
+    flex-wrap: wrap;
+  }
+
+  .token-earn span {
+    margin-left: 0;
+  }
+}

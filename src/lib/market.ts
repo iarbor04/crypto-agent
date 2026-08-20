@@ -1,5 +1,6 @@
 import { cgGet } from "./cgclient";
 import { cached, readJson, updateJson } from "./store";
+import { getSettings } from "./telegram";
 import type { MarketData } from "./types";
 
 type SearchCoin = { id: string; symbol: string; name: string; market_cap_rank: number | null };
@@ -58,7 +59,9 @@ export async function getMarkets(coinIds: string[]): Promise<Record<string, Mark
   const ids = [...new Set(coinIds.filter(Boolean))].sort();
   if (!ids.length) return {};
   const key = `markets-${hash(ids.join(","))}.json`;
-  const rows = await cached<CgMarket[]>(key, 5 * 60_000, () =>
+  // период обновления задаёт пользователь: по умолчанию 30 минут
+  const ttl = (await getSettings()).refreshMinutes * 60_000;
+  const rows = await cached<CgMarket[]>(key, ttl, () =>
     cgGet<CgMarket[]>("/coins/markets", {
       vs_currency: "usd",
       ids: ids.join(","),

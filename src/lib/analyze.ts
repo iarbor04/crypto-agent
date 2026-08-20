@@ -196,8 +196,11 @@ export async function analyzePortfolio(): Promise<Analysis> {
   const potentialYearlyUsd = tokens.reduce((s, t) => s + t.potentialYearlyUsd, 0);
   const idleValueUsd = tokens.filter((t) => t.best).reduce((s, t) => s + t.valueUsd, 0);
 
+  const { refreshMinutes } = await import("./telegram").then((m) => m.getSettings());
+
   return {
     generatedAt: new Date().toISOString(),
+    refreshMinutes,
     totalValueUsd,
     change24hUsd,
     potentialYearlyUsd,

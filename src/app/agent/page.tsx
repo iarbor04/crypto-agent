@@ -13,10 +13,12 @@ type SettingsView = {
   hasBotToken: boolean;
   schedule: Schedule;
   ai: AiSettings;
+  refreshMinutes: number;
   next: NextRun;
   lastScheduledRun: string | null;
 };
 type Detected = { bot: { username: string; name: string }; chats: { id: string; title: string; type: string }[] };
+const REFRESH_OPTIONS = [15, 30, 60, 120];
 type Schedule = { enabled: boolean; times: string[]; timezone: string; catchUp: boolean };
 type AiSettings = {
   enabled: boolean;
@@ -68,6 +70,7 @@ export default function AgentPage() {
   const [ai, setAi] = useState<AiSettings | null>(null);
   const [ascnKey, setAscnKey] = useState("");
   const [job, setJob] = useState<Job>(null);
+  const [refreshMinutes, setRefreshMinutes] = useState(30);
 
   const loadAll = useCallback(async () => {
     const [s, h] = await Promise.all([
@@ -81,6 +84,7 @@ export default function AgentPage() {
     setSchedule(s.schedule ?? null);
     setNext(s.next ?? null);
     setAi(s.ai ?? null);
+    setRefreshMinutes(s.refreshMinutes ?? 30);
   }, []);
 
   useEffect(() => {
@@ -143,6 +147,15 @@ export default function AgentPage() {
     } finally {
       setBusy(null);
     }
+  }
+
+  async function saveRefresh(minutes: number) {
+    setRefreshMinutes(minutes);
+    await fetch("/api/settings", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refreshMinutes: minutes }),
+    }).catch(() => setMsg({ text: "Не удалось сохранить период обновления", ok: false }));
   }
 
   async function detectBot() {
@@ -529,6 +542,18 @@ export default function AgentPage() {
               title="Модель ассистента"
               style={{ width: 130, height: 42, borderRadius: 10, border: "1px solid var(--line)", padding: "0 11px" }}
             />
+          </div>
+
+          <span className="label" style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6 }}>
+            КАК ЧАСТО ОБНОВЛЯТЬ ДАННЫЕ
+          </span>
+          <div className="preset-row" style={{ margin: "10px 0 18px" }}>
+            {REFRESH_OPTIONS.map((n) => (
+              <button key={n} className={refreshMinutes === n ? "active" : ""} onClick={() => saveRefresh(n)}>
+                {n < 60 ? `${n} мин` : `${n / 60} ч`}
+              </button>
+            ))}
+            <span style={{ marginLeft: 6 }}>цены, ликвидность и новости перезапрашиваются с этим интервалом</span>
           </div>
 
           <span className="label" style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6 }}>
