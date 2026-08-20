@@ -56,6 +56,11 @@ const KIND = { staking: "Стейкинг", "liquid-staking": "Ликвидны�
 async function api(path, options) {
   const res = await fetch(path, Object.assign({ headers: { "content-type": "application/json" } }, options || {}));
   const json = await res.json().catch(() => ({}));
+  // сессия кончилась, пока страница была открыта — уводим на вход, а не показываем ошибку
+  if (res.status === 401 && json && json.authRequired) {
+    window.location.replace("/login");
+    return {};
+  }
   if (json && json.warning) console.warn(path, json.warning, json.detail || "");
   return json;
 }

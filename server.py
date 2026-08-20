@@ -25,7 +25,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-from lib import market, net, sources, store  # noqa: E402
+from lib import auth, market, net, sources, store  # noqa: E402
 from lib.agent import (  # noqa: E402
     ask_ascn,
     ascn_credentials,
@@ -287,6 +287,7 @@ def api_ascn_check(_: Dict[str, str], body: Any) -> Any:
 ROUTES: Dict[Tuple[str, str], Callable[[Dict[str, str], Any], Any]] = {
     ("GET", "/api/analysis"): api_analysis,
     ("GET", "/api/health"): api_health,
+    ("GET", "/api/auth"): lambda *_: {"required": auth.enabled(), "authorized": True},
     ("GET", "/api/portfolio"): api_portfolio_get,
     ("POST", "/api/portfolio"): api_portfolio_post,
     ("POST", "/api/portfolio/demo"): api_portfolio_demo,
@@ -307,9 +308,45 @@ ROUTES: Dict[Tuple[str, str], Callable[[Dict[str, str], Any], Any]] = {
 }
 
 
+# Что отдаётся до входа: страница входа и то, без чего она не нарисуется.
+OPEN_FILES = {"/styles.css", "/favicon.svg", "/emblem.svg"}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "crypto-agent/1.0"
     protocol_version = "HTTP/1.1"
+
+    # ————— вход —————
+
+    def _secure_link(self) -> bool:
+        return (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip() == "https"
+
+    def _authorized(self) -> bool:
+        if not auth.enabled():
+            return True
+        return auth.check_token(auth.token_from_cookies(self.headers.get("Cookie")))
+
+    def _who(self) -> str:
+        forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        return forwarded or self.client_address[0]
+
+    def _do_login(self) -> None:
+        wait = auth.locked_out(self._who())
+        if wait:
+            self._send_json({"error": "Слишком много попыток, подождите %d с" % int(wait + 1), "_status": 429})
+            return
+        given = (self._read_body() or {}).get("password") or ""
+        if not auth.check_password(given, self._who()):
+            self._send_json({"error": "Неверный пароль", "_status": 401})
+            return
+        body = json.dumps({"ok": True}, ensure_ascii=False).encode("utf-8")
+        self._send(200, body, "application/json; charset=utf-8",
+                   {"Set-Cookie": auth.cookie_header(auth.make_token(), self._secure_link())})
+
+    def _do_logout(self) -> None:
+        body = json.dumps({"ok": True}, ensure_ascii=False).encode("utf-8")
+        self._send(200, body, "application/json; charset=utf-8",
+                   {"Set-Cookie": auth.clear_cookie_header(self._secure_link())})
 
     def log_message(self, fmt: str, *args: Any) -> None:  # тише в консоли
         if "/api/" in (args[0] if args else ""):
@@ -364,6 +401,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
         query = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
+        if not self._authorized():
+            if parsed.path == "/api/health":
+                # проверка платформы должна проходить, но конфигурацию не показываем
+                self._send_json({"ok": True, "authRequired": True})
+                return
+            if parsed.path == "/api/auth":
+                self._send_json({"required": True, "authorized": False})
+                return
+            if parsed.path.startswith("/api/"):
+                self._send_json({"error": "Нужен вход", "authRequired": True, "_status": 401})
+                return
+            self._serve_static(parsed.path if parsed.path in OPEN_FILES else "/login.html")
+            return
         handler = ROUTES.get(("GET", parsed.path))
         if handler:
             try:
@@ -384,6 +434,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
         query = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
+        if parsed.path == "/api/login":
+            self._do_login()
+            return
+        if parsed.path == "/api/logout":
+            self._do_logout()
+            return
+        if not self._authorized():
+            # внешнему планировщику пароль не нужен: у него свой AGENT_SECRET
+            cron = parsed.path == "/api/agent/run" and query.get("secret")
+            expected = os.environ.get("AGENT_SECRET")
+            if not (cron and expected and query.get("secret") == expected):
+                self._send_json({"error": "Нужен вход", "authRequired": True, "_status": 401})
+                return
         handler = ROUTES.get(("POST", parsed.path))
         if not handler:
             self._send_json({"error": "неизвестный маршрут"}, 404)

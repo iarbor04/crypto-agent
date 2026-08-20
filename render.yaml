@@ -1,0 +1,28 @@
+# Развёртывание на Render одним файлом: Dashboard → New → Blueprint → этот репозиторий.
+services:
+  - type: web
+    name: ascn-portfolio
+    runtime: python
+    plan: starter          # free тоже работает, но засыпает без трафика и теряет data/ при перезапуске
+    buildCommand: ""       # зависимостей нет, собирать нечего
+    startCommand: python3 server.py
+    healthCheckPath: /api/health
+    disk:
+      name: data
+      mountPath: /var/data # тут живут портфель, настройки и кэши
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: DASHBOARD_PASSWORD
+        sync: false        # Render спросит значение при создании и не положит его в репозиторий
+      - key: TZ
+        value: Europe/Moscow
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: ASCN_API_KEY
+        sync: false
+      - key: COINGECKO_API_KEY
+        sync: false

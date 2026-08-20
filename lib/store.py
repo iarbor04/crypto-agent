@@ -14,7 +14,9 @@ import time
 from typing import Any, Callable, Dict, Optional, TypeVar
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(ROOT, "data")
+# На хостинге постоянный диск монтируется в стороннюю папку, а файлы проекта
+# при пересборке затираются — поэтому каталог данных можно задать переменной.
+DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(ROOT, "data")
 CACHE_DIR = os.path.join(DATA_DIR, "cache")
 
 T = TypeVar("T")

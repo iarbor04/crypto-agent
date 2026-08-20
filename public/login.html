@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Вход — ASCN.AI Portfolio</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+      .gate-card { width: 100%; max-width: 348px; padding: 28px; background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 4px 12px #26325408; }
+      .gate-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; font-size: 14px; font-weight: 700; }
+      .gate-brand span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--blue-soft); }
+      .gate-card h1 { margin: 0 0 6px; font-size: 19px; }
+      .gate-card p.lead { margin: 0 0 20px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+      .gate-card button { width: 100%; height: 42px; border: 0; border-radius: 10px; background: var(--blue); color: #fff; font-size: 13px; font-weight: 600; }
+      .gate-card button:hover { background: var(--blue-dark); }
+      .gate-card button:disabled { opacity: .6; }
+      .gate-error { margin: 12px 0 0; padding: 10px 12px; border-radius: 9px; background: var(--red-soft); color: var(--red); font-size: 12px; }
+      .gate-error[hidden] { display: none; }
+      input:focus-visible, button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    </style>
+  </head>
+  <body>
+    <main class="gate">
+      <form class="gate-card" id="form">
+        <div class="gate-brand">
+          <span><img src="/emblem.svg" alt="" width="20" height="20" /></span>
+          ASCN.AI Portfolio
+        </div>
+        <h1>Вход в дашборд</h1>
+        <p class="lead">Портфель и агент закрыты паролем. Он задаётся переменной <span class="mono">DASHBOARD_PASSWORD</span> на сервере.</p>
+        <label class="field">
+          ПАРОЛЬ
+          <input type="password" id="password" autocomplete="current-password" autofocus required />
+        </label>
+        <button type="submit" id="submit">Войти</button>
+        <p class="gate-error" id="error" hidden></p>
+      </form>
+    </main>
+
+    <script>
+      var form = document.getElementById("form");
+      var field = document.getElementById("password");
+      var button = document.getElementById("submit");
+      var error = document.getElementById("error");
+
+      function fail(text) {
+        error.textContent = text;
+        error.hidden = false;
+        button.disabled = false;
+        button.textContent = "Войти";
+        field.select();
+      }
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        error.hidden = true;
+        button.disabled = true;
+        button.textContent = "Проверяю…";
+        fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: field.value })
+        })
+          .then(function (res) {
+            return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+          })
+          .then(function (res) {
+            if (res.ok) { window.location.replace("/"); return; }
+            fail(res.data.error || "Не пускает");
+          })
+          .catch(function () { fail("Сервер не ответил. Попробуйте ещё раз."); });
+      });
+    </script>
+  </body>
+</html>
