@@ -24,8 +24,8 @@ export default function RisksPage() {
       <div className="page-header">
         <div>
           <span className="eyebrow">РЕЙТИНГ РИСКА</span>
-          <h1>Что стоит продать</h1>
-          <p>От худшего к лучшему: почему токен слабый и что с ним делать</p>
+          <h1>На что обратить внимание</h1>
+          <p>Слабые позиции сверху: почему у них низкий health и что с ними делать</p>
         </div>
         <div className="top-actions">
           <button className="ghost-button" onClick={reload} disabled={loading}>

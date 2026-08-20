@@ -1,30 +1,69 @@
 import { readJson, writeJson } from "./store";
 
+export type Schedule = {
+  enabled: boolean;
+  /** времена запуска в формате "09:00" в часовом поясе timezone */
+  times: string[];
+  timezone: string;
+  /** догонять запуск, если машина была выключена в это время */
+  catchUp: boolean;
+};
+
 export type Settings = {
   botToken: string;
   chatId: string;
   /** присылать сводку даже когда важного ничего нет */
   sendEmptyDigest: boolean;
+  schedule: Schedule;
 };
 
-const DEFAULTS: Settings = { botToken: "", chatId: "", sendEmptyDigest: false };
+const serverTimezone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+};
+
+const DEFAULT_SCHEDULE = (): Schedule => ({
+  enabled: true,
+  times: ["09:00", "21:00"],
+  timezone: serverTimezone(),
+  catchUp: true,
+});
+
+function normalizeSchedule(raw?: Partial<Schedule>): Schedule {
+  const base = DEFAULT_SCHEDULE();
+  if (!raw) return base;
+  const times = Array.isArray(raw.times)
+    ? [...new Set(raw.times.filter((t) => typeof t === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(t)))].sort()
+    : base.times;
+  return {
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : base.enabled,
+    times: times.length ? times.slice(0, 8) : base.times,
+    timezone: typeof raw.timezone === "string" && raw.timezone ? raw.timezone : base.timezone,
+    catchUp: typeof raw.catchUp === "boolean" ? raw.catchUp : base.catchUp,
+  };
+}
 
 export async function getSettings(): Promise<Settings> {
   const saved = await readJson<Partial<Settings>>("settings.json", {});
   return {
     botToken: saved.botToken || process.env.TELEGRAM_BOT_TOKEN || "",
     chatId: saved.chatId || process.env.TELEGRAM_CHAT_ID || "",
-    sendEmptyDigest: saved.sendEmptyDigest ?? DEFAULTS.sendEmptyDigest,
+    sendEmptyDigest: saved.sendEmptyDigest ?? false,
+    schedule: normalizeSchedule(saved.schedule),
   };
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
   const current = await readJson<Partial<Settings>>("settings.json", {});
-  const next = {
+  const next: Settings = {
     botToken: typeof patch.botToken === "string" ? patch.botToken.trim() : current.botToken ?? "",
     chatId: typeof patch.chatId === "string" ? patch.chatId.trim() : current.chatId ?? "",
     sendEmptyDigest:
       typeof patch.sendEmptyDigest === "boolean" ? patch.sendEmptyDigest : current.sendEmptyDigest ?? false,
+    schedule: normalizeSchedule({ ...current.schedule, ...patch.schedule }),
   };
   await writeJson("settings.json", next);
   return getSettings();

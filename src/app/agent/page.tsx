@@ -1,24 +1,42 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Play, Send } from "lucide-react";
+import { Play, Plus, Send, X } from "lucide-react";
 import { Loader } from "@/components/bits";
 import { money, timeAgo } from "@/lib/format";
 import type { AgentRun } from "@/lib/types";
-import type { Health } from "@/lib/health";
 
-type SettingsView = { chatId: string; sendEmptyDigest: boolean; botTokenMask: string; hasBotToken: boolean };
+type SettingsView = {
+  chatId: string;
+  sendEmptyDigest: boolean;
+  botTokenMask: string;
+  hasBotToken: boolean;
+  schedule: Schedule;
+  next: NextRun;
+  lastScheduledRun: string | null;
+};
 type Detected = { bot: { username: string; name: string }; chats: { id: string; title: string; type: string }[] };
-
-const CRON = `0 9 * * *  cd /path/to/crypto-agent && node scripts/run-agent.mjs
-0 21 * * * cd /path/to/crypto-agent && node scripts/run-agent.mjs`;
+type Schedule = { enabled: boolean; times: string[]; timezone: string; catchUp: boolean };
+type NextRun = { at: string; inMinutes: number; today: boolean } | null;
 
 const CURL = `curl -X POST "http://localhost:3500/api/agent/run?secret=$AGENT_SECRET"`;
+
+const PRESETS: { label: string; times: string[] }[] = [
+  { label: "Утро и вечер", times: ["09:00", "21:00"] },
+  { label: "Три раза", times: ["09:00", "15:00", "21:00"] },
+  { label: "Каждые 6 часов", times: ["00:00", "06:00", "12:00", "18:00"] },
+];
+
+function humanIn(minutes: number): string {
+  if (minutes < 60) return `${minutes} мин`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h} ч ${m} мин` : `${h} ч`;
+}
 
 export default function AgentPage() {
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [runs, setRuns] = useState<AgentRun[] | null>(null);
-  const [health, setHealth] = useState<Health | null>(null);
   const [token, setToken] = useState("");
   const [chatId, setChatId] = useState("");
   const [empty, setEmpty] = useState(false);
@@ -26,20 +44,20 @@ export default function AgentPage() {
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detected, setDetected] = useState<Detected | null>(null);
+  const [schedule, setSchedule] = useState<Schedule | null>(null);
+  const [next, setNext] = useState<NextRun>(null);
 
   const loadAll = useCallback(async () => {
-    const [s, h, hl] = await Promise.all([
+    const [s, h] = await Promise.all([
       fetch("/api/settings", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/agent/history", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/health", { cache: "no-store" })
-        .then((r) => r.json())
-        .catch(() => null),
     ]);
     setSettings(s);
     setChatId(s.chatId ?? "");
     setEmpty(Boolean(s.sendEmptyDigest));
     setRuns(h.runs ?? []);
-    setHealth(hl);
+    setSchedule(s.schedule ?? null);
+    setNext(s.next ?? null);
   }, []);
 
   useEffect(() => {
@@ -63,6 +81,27 @@ export default function AgentPage() {
       await loadAll();
     } catch (e) {
       setMsg({ text: e instanceof Error ? e.message : String(e), ok: false });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveSchedule(patch: Partial<Schedule>) {
+    if (!schedule) return;
+    const nextSchedule = { ...schedule, ...patch, times: [...(patch.times ?? schedule.times)].sort() };
+    setSchedule(nextSchedule);
+    setBusy("schedule");
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ schedule: nextSchedule }),
+      });
+      const json = (await res.json()) as { schedule?: Schedule; next?: NextRun };
+      if (json.schedule) setSchedule(json.schedule);
+      setNext(json.next ?? null);
+    } catch {
+      setMsg({ text: "Не удалось сохранить расписание", ok: false });
     } finally {
       setBusy(null);
     }
@@ -215,88 +254,120 @@ export default function AgentPage() {
           <div className="card-head">
             <div>
               <h2>Расписание</h2>
-              <p>Два запуска в день: утром и вечером</p>
+              <p>
+                {schedule?.enabled
+                  ? next
+                    ? `Следующий разбор ${next.today ? "сегодня" : "завтра"} в ${next.at} — через ${humanIn(next.inMinutes)}`
+                    : "Время не выбрано"
+                  : "Агент выключен — сводки приходить не будут"}
+              </p>
             </div>
-            <span className="pill pill-blue">2 РАЗА В ДЕНЬ</span>
+            <label className="switch" title="Включить или выключить агента">
+              <input
+                type="checkbox"
+                checked={Boolean(schedule?.enabled)}
+                onChange={(e) => saveSchedule({ enabled: e.target.checked })}
+                disabled={!schedule || busy === "schedule"}
+              />
+              <span />
+            </label>
           </div>
+
           <div className="card-body">
-            <p className="hint">
-              Добавьте две строки в crontab на машине, где живёт дашборд (<code>crontab -e</code>):
-            </p>
-            <pre className="code">{CRON}</pre>
-            <p className="hint" style={{ marginTop: 14 }}>
-              Или дёргайте эндпоинт из любого планировщика:
-            </p>
-            <pre className="code">{CURL}</pre>
-            <p className="hint" style={{ marginTop: 14 }}>
-              Что делает разбор: тянет цены и объёмы, ищет новости по каждому токену, пересчитывает health, сравнивает с
-              прошлым запуском и отправляет только дельту — новые плохие и хорошие новости, смену вердикта, движения
-              цены больше 12%, выросшие ставки стейкинга.
-            </p>
+            {!schedule && <p className="hint">Загружаю расписание…</p>}
+
+            {schedule && (
+              <>
+                <span className="label" style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6 }}>
+                  ВРЕМЯ ЗАПУСКА · {schedule.timezone}
+                </span>
+
+                <div className="time-list">
+                  {schedule.times.map((t, i) => (
+                    <div className="time-chip" key={`${t}-${i}`}>
+                      <input
+                        type="time"
+                        value={t}
+                        onChange={(e) => {
+                          const times = [...schedule.times];
+                          times[i] = e.target.value;
+                          saveSchedule({ times });
+                        }}
+                      />
+                      {schedule.times.length > 1 && (
+                        <button
+                          onClick={() => saveSchedule({ times: schedule.times.filter((_, idx) => idx !== i) })}
+                          aria-label="Убрать время"
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {schedule.times.length < 8 && (
+                    <button
+                      className="time-add"
+                      onClick={() => saveSchedule({ times: [...schedule.times, "12:00"] })}
+                    >
+                      <Plus size={14} /> Добавить время
+                    </button>
+                  )}
+                </div>
+
+                <div className="preset-row">
+                  <span>Быстрый выбор:</span>
+                  {PRESETS.map((p) => (
+                    <button
+                      key={p.label}
+                      className={schedule.times.join() === p.times.join() ? "active" : ""}
+                      onClick={() => saveSchedule({ times: p.times })}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="checkbox" style={{ marginTop: 16 }}>
+                  <input
+                    type="checkbox"
+                    checked={schedule.catchUp}
+                    onChange={(e) => saveSchedule({ catchUp: e.target.checked })}
+                  />
+                  <span>
+                    Догонять пропущенное
+                    <small>
+                      Если в назначенное время машина была выключена или дашборд не работал — разбор запустится сразу
+                      после запуска, а не пропадёт до следующего раза.
+                    </small>
+                  </span>
+                </label>
+
+                <div className="schedule-foot">
+                  <span>
+                    {settings?.lastScheduledRun
+                      ? `Последний запуск по расписанию: ${new Date(settings.lastScheduledRun).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`
+                      : "По расписанию ещё не запускался"}
+                  </span>
+                  {busy === "schedule" && <span style={{ color: "var(--blue)" }}>сохраняю…</span>}
+                </div>
+
+                <details className="external">
+                  <summary>Запускать внешним планировщиком</summary>
+                  <p className="hint" style={{ marginTop: 10 }}>
+                    Расписание выше держит сам дашборд, пока он запущен. Если хочется дёргать разбор извне — например
+                    из cron на сервере или из чужого планировщика:
+                  </p>
+                  <pre className="code">{CURL}</pre>
+                  <p className="hint" style={{ marginTop: 8, fontSize: 10.5 }}>
+                    Секрет берётся из <code>AGENT_SECRET</code> в <code>.env.local</code>. Готовый скрипт для cron —{" "}
+                    <code>node scripts/run-agent.mjs</code>.
+                  </p>
+                </details>
+              </>
+            )}
           </div>
         </div>
       </div>
-
-      {health && (
-        <>
-          <h2 className="section-heading">Состояние установки</h2>
-          <div className="card">
-            <div className="card-head">
-              <div>
-                <h2>Конфигурация</h2>
-                <p>Node {health.node} · всё, что не задано, работает на публичных лимитах</p>
-              </div>
-            </div>
-            <div className="config-grid">
-              <div className="config-item">
-                <i className="status-dot" style={{ background: health.dataDir ? "var(--green)" : "var(--red)" }} />
-                Каталог данных <small>{health.dataDir ? "data/ на месте" : "нет доступа к data/"}</small>
-              </div>
-              <div className="config-item">
-                <i className="status-dot" style={{ background: health.coingeckoKey ? "var(--green)" : "var(--amber)" }} />
-                Ключ CoinGecko <small>{health.coingeckoKey ? "задан" : "нет — лимит 5–15 запросов/мин"}</small>
-              </div>
-              <div className="config-item">
-                <i className="status-dot" style={{ background: health.telegramReady ? "var(--green)" : "var(--amber)" }} />
-                Telegram <small>{health.telegramReady ? "подключён" : "сводки не уйдут"}</small>
-              </div>
-              <div className="config-item">
-                <i className="status-dot" style={{ background: health.agentSecretSet ? "var(--green)" : "var(--amber)" }} />
-                AGENT_SECRET <small>{health.agentSecretSet ? "задан" : "запуск по cron не пройдёт"}</small>
-              </div>
-            </div>
-
-            <div style={{ padding: "14px 20px 4px" }}>
-              <span className="label" style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6 }}>
-                ИСТОЧНИКИ ДАННЫХ
-              </span>
-            </div>
-            {health.sources.map((s) => (
-              <div className="source-row" key={s.name}>
-                <i
-                  className="status-dot"
-                  style={{ background: s.fresh === null ? "#cfd5e6" : s.fresh ? "var(--green)" : "var(--amber)" }}
-                />
-                <b>{s.name}</b>
-                <span className="what">{s.what}</span>
-                <span className="age">
-                  {s.ageMinutes == null
-                    ? "ещё не загружалось"
-                    : s.ageMinutes < 60
-                      ? `${s.ageMinutes} мин назад`
-                      : `${Math.round(s.ageMinutes / 60)} ч назад`}
-                </span>
-              </div>
-            ))}
-            <div style={{ padding: "12px 20px 18px" }}>
-              <p className="hint" style={{ fontSize: 10.5 }}>
-                Жёлтый — кэш просрочен, обновится при следующем разборе. «Ещё не загружалось» — источник не понадобился
-                или не ответил; страница при этом работает на остальных данных.
-              </p>
-            </div>
-          </div>
-        </>
-      )}
 
       <h2 className="section-heading">История запусков</h2>
       {!runs && <Loader text="Загружаю историю" />}

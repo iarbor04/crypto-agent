@@ -2199,3 +2199,193 @@ a {
   font-family: var(--font-geist-mono), monospace;
   font-size: 10.5px;
 }
+
+/* ————— Панель расписания ————— */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 24px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch span {
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  background: #d7dbe6;
+  transition: background 140ms ease;
+}
+
+.switch span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px #16203326;
+  transition: transform 140ms ease;
+}
+
+.switch input:checked + span {
+  background: var(--blue);
+}
+
+.switch input:checked + span::after {
+  transform: translateX(18px);
+}
+
+.switch input:disabled + span {
+  opacity: 0.5;
+}
+
+.time-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+
+.time-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  transition: border-color 120ms ease;
+}
+
+.time-chip:focus-within {
+  border-color: #5365ef;
+  box-shadow: 0 0 0 3px #5365ef12;
+}
+
+.time-chip input {
+  height: 40px;
+  padding: 0 6px 0 11px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.time-chip button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #b5bcc9;
+}
+
+.time-chip button:hover {
+  background: var(--red-soft);
+  color: #c33b42;
+}
+
+.time-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px dashed #cfd5e6;
+  border-radius: 10px;
+  background: transparent;
+  color: #6f7789;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.time-add:hover {
+  border-color: var(--blue);
+  color: #4658ea;
+}
+
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: #9aa1af;
+}
+
+.preset-row button {
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #6f7789;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.preset-row button:hover {
+  border-color: #cfd5e6;
+  color: var(--ink);
+}
+
+.preset-row button.active {
+  border-color: transparent;
+  background: var(--blue-soft);
+  color: #4658ea;
+}
+
+.schedule-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #edf0f4;
+  color: #9aa1af;
+  font-size: 11px;
+}
+
+.external {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #edf0f4;
+}
+
+.external summary {
+  cursor: pointer;
+  color: #6f7789;
+  font-size: 11.5px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.external summary::-webkit-details-marker {
+  display: none;
+}
+
+.external summary::before {
+  content: "＋ ";
+  color: #b5bcc9;
+}
+
+.external[open] summary::before {
+  content: "− ";
+}
