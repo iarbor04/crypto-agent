@@ -525,30 +525,33 @@ a {
   flex: 0 0 auto;
 }
 
-.health {
+.risk {
   display: flex;
   align-items: center;
   gap: 9px;
+  min-width: 0;
 }
 
-.health-bar {
+.risk-bar {
   flex: 1;
-  min-width: 46px;
+  min-width: 42px;
   height: 6px;
   border-radius: 6px;
   background: #edf0f5;
   overflow: hidden;
 }
 
-.health-bar span {
+.risk-bar span {
   display: block;
   height: 100%;
   border-radius: 6px;
+  transition: width 240ms ease;
 }
 
-.health strong {
-  font-size: 12px !important;
-  min-width: 20px;
+.risk strong {
+  font-size: 11.5px !important;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .risk-dots {
@@ -1583,7 +1586,7 @@ a {
   .col-spark,
   .col-delta,
   .col-verdict,
-  .col-health {
+  .col-risk {
     display: none;
   }
   .page-header {

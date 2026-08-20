@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { TokenDrawer } from "@/components/TokenDrawer";
-import { Delta, Health, Loader, Pill } from "@/components/bits";
+import { Delta, RiskMeter, Loader, Pill } from "@/components/bits";
 import { useAnalysis } from "@/components/useAnalysis";
 import { VERDICT, money, short } from "@/lib/format";
 import type { TokenAnalysis } from "@/lib/types";
@@ -25,7 +25,7 @@ export default function RisksPage() {
         <div>
           <span className="eyebrow">РЕЙТИНГ РИСКА</span>
           <h1>На что обратить внимание</h1>
-          <p>Слабые позиции сверху: почему у них низкий health и что с ними делать</p>
+          <p>Самые слабые позиции сверху: что против них, что за них и что с этим делать</p>
         </div>
         <div className="top-actions">
           <button className="ghost-button" onClick={reload} disabled={loading}>
@@ -47,27 +47,27 @@ export default function RisksPage() {
                 {money(atRiskValue)}
               </strong>
               <small>
-                {problem.length} из {ranked.length} позиций с health ниже 56
+                {problem.length} из {ranked.length} позиций с повышенным риском
               </small>
             </article>
             <article className="metric-card">
-              <span>Доля портфеля в слабых активах</span>
+              <span>Доля портфеля в слабых позициях</span>
               <strong className="mono">{share.toFixed(0)}%</strong>
               <small>от {money(data.totalValueUsd)} общей стоимости</small>
             </article>
             <article className="metric-card">
-              <span>Требуют выхода</span>
+              <span>Стоит закрыть</span>
               <strong className="mono" style={{ color: "var(--red)" }}>
                 {ranked.filter((t) => t.verdict === "sell").length}
               </strong>
-              <small>вердикт «продавать» — критичный фон или обвал</small>
+              <small>критичные новости или обвал — обычно это выход</small>
             </article>
           </div>
 
           {problem.length === 0 ? (
             <div className="empty-state">
-              <h3>Слабых токенов нет</h3>
-              <p>Ни одна позиция не набрала меньше 56/100. Ниже — весь портфель по порядку здоровья.</p>
+              <h3>Слабых позиций нет</h3>
+              <p>Ни у одного токена риск не выше умеренного. Ниже — весь портфель по возрастанию риска.</p>
             </div>
           ) : (
             problem.map((t, i) => <RiskCard key={t.symbol} t={t} rank={i + 1} onOpen={() => setOpenToken(t.symbol)} />)
@@ -75,13 +75,13 @@ export default function RisksPage() {
 
           {!!fine.length && (
             <>
-              <h2 className="section-heading">Здоровая часть портфеля</h2>
+              <h2 className="section-heading">Остальные позиции</h2>
               <div className="card">
                 {fine.map((t) => (
                   <div className="fine-row" key={t.symbol} onClick={() => setOpenToken(t.symbol)}>
                     <strong>{t.symbol}</strong>
                     <div style={{ width: 130 }}>
-                      <Health score={t.score} />
+                      <RiskMeter score={t.score} />
                     </div>
                     <span className="mono" style={{ width: 90, textAlign: "right" }}>
                       {money(t.valueUsd)}
@@ -133,7 +133,7 @@ function RiskCard({ t, rank, onOpen }: { t: TokenAnalysis; rank: number; onOpen:
           </div>
           <div className="risk-meta">
             <span style={{ width: 130 }}>
-              <Health score={t.score} />
+              <RiskMeter score={t.score} />
             </span>
             <span className="mono" style={{ color: "var(--ink)", fontWeight: 700 }}>
               {money(t.valueUsd)}

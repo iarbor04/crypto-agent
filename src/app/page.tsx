@@ -6,7 +6,7 @@ import { Allocation, PortfolioChart } from "@/components/PortfolioChart";
 import { PortfolioEditor } from "@/components/PortfolioEditor";
 import { TokenCard } from "@/components/TokenCard";
 import { TokenDrawer } from "@/components/TokenDrawer";
-import { Delta, Health, Loader, Pill, RiskDots, Sparkline } from "@/components/bits";
+import { Delta, RiskMeter, Loader, Pill, RiskDots, Sparkline } from "@/components/bits";
 import { dropAnalysisCache, useAnalysis } from "@/components/useAnalysis";
 import { useStoredView } from "@/components/useStoredView";
 import { VERDICT, amount as fmtAmount, money, moneySmart, timeAgo } from "@/lib/format";
@@ -31,24 +31,21 @@ export default function PortfolioPage() {
   }
 
   const token = data?.tokens.find((t) => t.symbol === openToken) ?? null;
-  const health = data?.tokens.length
-    ? Math.round(
-        data.tokens.reduce((s, t) => s + t.score * Math.max(t.valueUsd, 1), 0) /
-          data.tokens.reduce((s, t) => s + Math.max(t.valueUsd, 1), 0),
-      )
-    : 0;
+  const risky = data?.tokens.filter((t) => t.score < 56) ?? [];
+  const riskyValue = risky.reduce((s, t) => s + t.valueUsd, 0);
+  const riskyShare = data?.totalValueUsd ? (riskyValue / data.totalValueUsd) * 100 : 0;
   const needsAction = data?.tokens.filter((t) => t.verdict === "sell" || t.verdict === "reduce").length ?? 0;
 
   return (
     <>
       <div className="page-header">
         <div>
-          <span className="eyebrow">ПОРТФЕЛЬ И ДОХОДНОСТЬ</span>
+          <span className="eyebrow">ПОРТФЕЛЬ</span>
           <h1>Мои токены</h1>
           <p>
             {data
-              ? `${data.tokens.length} позиций · обновлено ${timeAgo(data.generatedAt)}`
-              : "Считаю цены, доходности и новостной фон"}
+              ? `${data.tokens.length} позиций · данные обновлены ${timeAgo(data.generatedAt)}`
+              : "Собираю цены, доходности, ликвидность и новости"}
           </p>
         </div>
         <div className="top-actions">
@@ -90,29 +87,34 @@ export default function PortfolioPage() {
 
           <div className="metric-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
             <article className="metric-card">
-              <span>Потенциал стейкинга</span>
+              <span>Можно заработать на стейкинге</span>
               <strong className="mono" style={{ color: "var(--green)" }}>
-                {money(data.potentialYearlyUsd)}
+                {money(data.potentialYearlyUsd)} в год
               </strong>
-              <small>в год, если разложить {money(data.idleValueUsd)} по надёжным пулам</small>
+              <small>
+                если разложить {money(data.idleValueUsd)} по проверенным пулам — без продажи самих токенов
+              </small>
             </article>
 
             <article className="metric-card">
-              <span>Здоровье портфеля</span>
-              <strong className="mono">{health} / 100</strong>
-              <div style={{ margin: "2px 0 8px" }}>
-                <Health score={health} />
-              </div>
-              <small>взвешено по размеру позиций</small>
+              <span>В слабых позициях</span>
+              <strong className="mono" style={{ color: riskyValue ? "var(--red)" : "var(--green)" }}>
+                {money(riskyValue)}
+              </strong>
+              <small>
+                {risky.length
+                  ? `${riskyShare.toFixed(0)}% портфеля · ${risky.length} из ${data.tokens.length} токенов с повышенным риском`
+                  : "все позиции с умеренным или низким риском"}
+              </small>
             </article>
 
             <article className="metric-card">
-              <span>Требует действий</span>
+              <span>Нужно решение</span>
               <strong className="mono" style={{ color: needsAction ? "var(--red)" : "var(--green)" }}>
                 {needsAction}
               </strong>
               <small className={needsAction ? "down" : "up"}>
-                {needsAction ? "позиции на продажу или сокращение" : "красных флагов в портфеле нет"}
+                {needsAction ? "позиции стоит сократить или закрыть" : "срочных действий нет"}
               </small>
             </article>
           </div>
@@ -155,12 +157,12 @@ export default function PortfolioPage() {
             <div className="card">
               <div className="table-head">
                 <span>Токен</span>
-                <span className="cell-right">Позиция</span>
-                <span className="col-spark">7 дней</span>
-                <span className="col-delta cell-right">24ч / 7д</span>
-                <span className="col-health">Здоровье</span>
-                <span className="col-verdict">Вердикт</span>
-                <span className="cell-right">Доходность</span>
+                <span className="cell-right">Сколько у вас</span>
+                <span className="col-spark">Цена за 7 дней</span>
+                <span className="col-delta cell-right">За сутки / неделю</span>
+                <span className="col-risk">Риск</span>
+                <span className="col-verdict">Что делать</span>
+                <span className="cell-right">Стейкинг</span>
                 <span />
               </div>
               {data.tokens.map((t) => (
@@ -178,10 +180,10 @@ export default function PortfolioPage() {
 }
 
 const ALERT_STYLE: Record<Alert["level"], { label: string; color: string; bg: string; Icon: typeof AlertTriangle }> = {
-  critical: { label: "Требует действий", color: "#c33b42", bg: "var(--red-soft)", Icon: AlertTriangle },
+  critical: { label: "Нужно решение", color: "#c33b42", bg: "var(--red-soft)", Icon: AlertTriangle },
   warning: { label: "Внимание", color: "#b9741a", bg: "var(--amber-soft)", Icon: AlertTriangle },
   positive: { label: "Позитив", color: "#1c8f5a", bg: "var(--green-soft)", Icon: TrendingUp },
-  info: { label: "Деньги без дела", color: "#4658ea", bg: "var(--blue-soft)", Icon: PiggyBank },
+  info: { label: "Лежит без дела", color: "#4658ea", bg: "var(--blue-soft)", Icon: PiggyBank },
 };
 
 function AlertCard({ alert, onOpen }: { alert: Alert; onOpen: () => void }) {
@@ -249,8 +251,8 @@ function Row({ t, onOpen }: { t: TokenAnalysis; onOpen: () => void }) {
         </div>
       </div>
 
-      <div className="col-health">
-        <Health score={t.score} />
+      <div className="col-risk">
+        <RiskMeter score={t.score} />
       </div>
 
       <div className="col-verdict">
@@ -268,13 +270,13 @@ function Row({ t, onOpen }: { t: TokenAnalysis; onOpen: () => void }) {
             </div>
           </>
         ) : (
-          <span style={{ color: "#a3a9b6" }}>нет надёжных</span>
+          <span style={{ color: "#a3a9b6" }}>негде</span>
         )}
       </div>
 
       <div className="cell-right">
         <span className="link-button">
-          Заработать <ArrowUpRight size={12} style={{ verticalAlign: "-1px" }} />
+          Открыть <ArrowUpRight size={12} style={{ verticalAlign: "-1px" }} />
         </span>
       </div>
     </div>

@@ -3,7 +3,7 @@
 import { ArrowUpRight, PiggyBank } from "lucide-react";
 import { VERDICT, amount as fmtAmount, money, moneySmart } from "@/lib/format";
 import type { TokenAnalysis } from "@/lib/types";
-import { Delta, Health, Pill, RiskDots } from "./bits";
+import { Delta, RiskMeter, Pill, RiskDots } from "./bits";
 
 const W = 300;
 const H = 44;
@@ -100,24 +100,25 @@ export function TokenCard({ t, onOpen }: { t: TokenAnalysis; onOpen: () => void 
       )}
 
       <div className="token-meta-row">
-        <Health score={t.score} />
-        <span style={{ color: "#a3a9b6", fontSize: 10, whiteSpace: "nowrap" }}>health {t.score}/100</span>
+        <RiskMeter score={t.score} />
       </div>
 
       {t.best ? (
         <div className="token-earn">
           <PiggyBank size={16} strokeWidth={2} />
-          <b className="mono">{t.best.apy.toFixed(1)}%</b>
+          <b className="mono" title="Доходность в год, если поставить токен в этот пул">
+            {t.best.apy.toFixed(1)}% в год
+          </b>
           {t.best.project}
           <RiskDots risk={t.best.risk} />
           <span className="mono">
-            +{money(t.potentialYearlyUsd)}/год <ArrowUpRight size={11} style={{ verticalAlign: "-1px" }} />
+            +{money(t.potentialYearlyUsd)} <ArrowUpRight size={11} style={{ verticalAlign: "-1px" }} />
           </span>
         </div>
       ) : (
         <div className="token-earn empty">
           <PiggyBank size={16} strokeWidth={2} />
-          Надёжного стейкинга нет
+          Заработать на нём негде
           <span>
             что делать <ArrowUpRight size={11} style={{ verticalAlign: "-1px" }} />
           </span>

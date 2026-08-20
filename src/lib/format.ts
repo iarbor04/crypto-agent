@@ -55,6 +55,26 @@ export const KIND: Record<string, string> = {
 export const riskColor = (risk: number) =>
   risk <= 2 ? "var(--green)" : risk === 3 ? "var(--amber)" : "var(--red)";
 
+export type RiskLevel = { label: string; short: string; color: string; tone: Tone; pct: number; hint: string };
+
+/**
+ * Наружу показываем риск, а не абстрактный «health»: длинная красная полоса
+ * читается сразу, а число 36/100 надо расшифровывать. Само число остаётся
+ * внутри — для сортировки, порогов и промпта ассистенту.
+ */
+export const riskOf = (score: number): RiskLevel => {
+  const pct = Math.max(4, Math.min(100, 100 - score));
+  if (score < 28)
+    return { label: "Риск критический", short: "критический", color: "var(--red)", tone: "red", pct, hint: "Фундамент и динамика против позиции — обычно это выход" };
+  if (score < 42)
+    return { label: "Риск высокий", short: "высокий", color: "#e0655b", tone: "red", pct, hint: "Позицию стоит сокращать или хеджировать" };
+  if (score < 56)
+    return { label: "Риск повышенный", short: "повышенный", color: "var(--amber)", tone: "amber", pct, hint: "Слабо, но не критично — держать под контролем" };
+  if (score < 72)
+    return { label: "Риск умеренный", short: "умеренный", color: "var(--blue)", tone: "blue", pct, hint: "Позиция в порядке" };
+  return { label: "Риск низкий", short: "низкий", color: "var(--green)", tone: "green", pct, hint: "Сильный актив — можно ставить в стейкинг" };
+};
+
 export const scoreColor = (score: number) =>
   score < 28 ? "var(--red)" : score < 42 ? "var(--amber)" : score < 56 ? "#9aa1af" : score < 72 ? "var(--blue)" : "var(--green)";
 

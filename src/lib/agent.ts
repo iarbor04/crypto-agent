@@ -1,5 +1,6 @@
 import { analyzePortfolio } from "./analyze";
 import { askAscn, buildTokenPrompt, hasAscnKey, markdownToTelegram } from "./ascn";
+import { riskOf } from "./format";
 import { readJson, writeJson } from "./store";
 import { escapeHtml, getSettings, sendTelegram } from "./telegram";
 import type { Alert, AgentRun, AgentJob, Analysis, TokenAnalysis } from "./types";
@@ -55,7 +56,7 @@ function diffAlerts(a: Analysis, prev: Snapshot | null): Alert[] {
       out.push({
         level: t.score < before.score ? "warning" : "positive",
         symbol: t.symbol,
-        title: `${t.symbol}: health ${before.score} → ${t.score}`,
+        title: `${t.symbol}: риск ${riskOf(before.score).short} → ${riskOf(t.score).short}`,
         body: t.reasons.slice(0, 2).map((r) => `• ${r.text}`).join("\n"),
       });
     }
@@ -144,13 +145,13 @@ export function buildDigest(a: Analysis, alerts: Alert[], prev: Snapshot | null)
 
   const worst = [...a.tokens].sort((x, y) => x.score - y.score).slice(0, 3);
   lines.push("");
-  lines.push("<b>Худшие в портфеле</b>");
+  lines.push("<b>Самые слабые позиции</b>");
   for (const t of worst) {
-    lines.push(`${t.symbol} — ${t.score}/100 · ${MONEY(t.valueUsd)} · 7д ${SIGN(t.market?.change7d ?? 0)}`);
+    lines.push(`${t.symbol} — риск ${riskOf(t.score).short} · ${MONEY(t.valueUsd)} · за неделю ${SIGN(t.market?.change7d ?? 0)}`);
   }
   if (a.potentialYearlyUsd >= 1) {
     lines.push("");
-    lines.push(`💰 Потенциал стейкинга: ${MONEY(a.potentialYearlyUsd)} в год с текущих позиций`);
+    lines.push(`💰 На стейкинге можно заработать ${MONEY(a.potentialYearlyUsd)} в год, не продавая токены`);
   }
   const url = process.env.APP_URL || "http://localhost:3500";
   lines.push("");

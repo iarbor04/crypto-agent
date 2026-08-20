@@ -39,7 +39,7 @@ export function buildTokenPrompt(t: TokenAnalysis, marketNote: string): string {
     t.funding != null ? `фондирование перпа ${(t.funding * 3 * 365 * 100).toFixed(0)}% в год` : "перпа на Binance нет",
     t.best ? `доступный стейкинг: ${t.best.apy.toFixed(1)}% в ${t.best.project} (риск ${t.best.risk}/5)` : "надёжного стейкинга нет",
     t.hacks.length ? `взлом ${t.hacks[0].date} на $${Math.round(t.hacks[0].amountUsd).toLocaleString("ru-RU")} (${t.hacks[0].technique})` : "",
-    `health по моей модели ${t.score}/100, вердикт: ${t.verdict}`,
+    `моя оценка риска: ${t.score < 42 ? "высокий" : t.score < 56 ? "повышенный" : t.score < 72 ? "умеренный" : "низкий"} (${t.score}/100 по внутренней шкале), вердикт: ${t.verdict}`,
     t.reasons.filter((r) => r.kind === "bad").slice(0, 3).map((r) => r.text).join("; "),
   ].filter(Boolean);
 

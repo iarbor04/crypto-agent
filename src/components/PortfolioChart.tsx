@@ -102,7 +102,7 @@ export function PortfolioChart({ series: week, change24hUsd }: { series: number[
         <div style={{ textAlign: "right" }}>
           {switcher}
           <div className="mono" style={{ marginTop: 10, fontSize: 11, color: "#8b93a4" }}>
-            мин {money(min)} · макс {money(max)}
+            минимум {money(min)} · максимум {money(max)}
           </div>
         </div>
       </div>
@@ -189,7 +189,7 @@ export function Allocation({
     <div className="hero-card">
       <div className="hero-head">
         <div>
-          <span className="label">АЛЛОКАЦИЯ</span>
+          <span className="label">ЧТО В ПОРТФЕЛЕ</span>
           <p className="hint" style={{ marginTop: 6, fontSize: 11 }}>
             {slices[0] ? `${slices[0].symbol} — ${slices[0].share.toFixed(0)}% портфеля` : "нет позиций"}
           </p>
@@ -223,7 +223,7 @@ export function Allocation({
             />
           ))}
           <text x="66" y="63" textAnchor="middle" fontSize="11" fill="#8b93a4" fontWeight="700">
-            ПОЗИЦИЙ
+            ТОКЕНОВ
           </text>
           <text x="66" y="80" textAnchor="middle" fontSize="18" fill="#172033" fontWeight="700">
             {tokens.length}

@@ -3,6 +3,7 @@ import { getMarketContext } from "./context";
 import { findHacks, getHacks } from "./hacks";
 import { getLiquidity } from "./liquidity";
 import { getMarketBenchmark, getMarkets, resolveCoinId } from "./market";
+import { riskOf } from "./format";
 import { getNews } from "./news";
 import { getPortfolio } from "./portfolio";
 import { scoreToken } from "./score";
@@ -245,7 +246,7 @@ export function buildAlerts(tokens: TokenAnalysis[], context?: MarketContext): A
       alerts.push({
         level: "critical",
         symbol: t.symbol,
-        title: `${t.symbol}: избавляться (health ${t.score}/100)`,
+        title: `${t.symbol}: пора избавляться — риск ${riskOf(t.score).short}`,
         body: t.reasons.filter((r) => r.kind === "bad").slice(0, 3).map((r) => `• ${r.text}`).join("\n") || critical?.text || "Слабая динамика и фон",
         action: `Выходить частями через ${t.exits[0]?.label ?? "DEX"} — $${Math.round(share).toLocaleString("ru-RU")} в позиции`,
       });
@@ -253,7 +254,7 @@ export function buildAlerts(tokens: TokenAnalysis[], context?: MarketContext): A
       alerts.push({
         level: "warning",
         symbol: t.symbol,
-        title: `${t.symbol}: сокращать позицию (health ${t.score}/100)`,
+        title: `${t.symbol}: сокращать позицию — риск ${riskOf(t.score).short}`,
         body: t.reasons.filter((r) => r.kind === "bad").slice(0, 2).map((r) => `• ${r.text}`).join("\n"),
         action: "Срезать половину или захеджировать фьючерсом",
       });
@@ -274,7 +275,7 @@ export function buildAlerts(tokens: TokenAnalysis[], context?: MarketContext): A
       alerts.push({
         level: "info",
         symbol: t.symbol,
-        title: `${t.symbol} лежит без дохода: до ${t.best.apy.toFixed(1)}% годовых`,
+        title: `${t.symbol} лежит без дела: можно ${t.best.apy.toFixed(1)}% в год`,
         body: `${t.best.project} (${t.best.chain}) — риск ${t.best.risk}/5, TVL $${Math.round(t.best.tvlUsd).toLocaleString("ru-RU")}`,
         action: `Это ~$${Math.round(t.potentialYearlyUsd).toLocaleString("ru-RU")} в год с текущей позиции`,
       });

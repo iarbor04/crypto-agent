@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { ArrowUpRight, X } from "lucide-react";
-import { KIND, VERDICT, amount as fmtAmount, money, moneySmart, pct, short } from "@/lib/format";
+import { KIND, VERDICT, amount as fmtAmount, money, moneySmart, pct, riskOf, short } from "@/lib/format";
 import type { Opportunity, TokenAnalysis } from "@/lib/types";
 import type { Venue } from "@/lib/liquidity";
-import { Delta, Health, Pill, RiskDots, Sparkline } from "./bits";
+import { Delta, RiskMeter, Pill, RiskDots, Sparkline } from "./bits";
 
 type Tab = "earn" | "why" | "profile" | "news" | "exit";
 
@@ -136,11 +136,11 @@ export function TokenDrawer({ token, onClose }: { token: TokenAnalysis; onClose:
               <small>{v.hint}</small>
             </div>
             <div>
-              <span>Здоровье</span>
+              <span>Риск позиции</span>
               <strong style={{ marginTop: 9 }}>
-                <Health score={token.score} />
+                <RiskMeter score={token.score} />
               </strong>
-              <small>{token.score} из 100 по 7 факторам</small>
+              <small>сложен из 8 факторов — они перечислены во вкладке «Разбор»</small>
             </div>
           </div>
         </div>
@@ -175,8 +175,8 @@ function EarnTab({ token }: { token: TokenAnalysis }) {
         </p>
         <div className="opp">
           <div className="opp-notes" style={{ borderTop: 0, paddingLeft: 16 }}>
-            • Проверить стейкинг на бирже (Binance Simple Earn, OKX Earn) — часто есть там, где нет в DeFi.
-            <br />• Собрать LP с ETH или USDC на DEX — но это уже риск impermanent loss.
+            • Проверить стейкинг на бирже (Binance Simple Earn, OKX Earn) — там бывает то, чего нет в DeFi.
+            <br />• Собрать пул с ETH или USDC на DEX — но если цены разъедутся, часть вложенного превратится в подешевевший токен.
             <br />• Если тезис по токену не работает — переложить в актив, который платит (вкладка «Выход и хедж»).
           </div>
         </div>
@@ -190,20 +190,20 @@ function EarnTab({ token }: { token: TokenAnalysis }) {
   return (
     <>
       <div className="section-title">
-        <h3>Куда поставить {token.symbol}</h3>
-        <span>{token.best ? `потенциал: ${money(token.potentialYearlyUsd)} в год` : "надёжного варианта нет"}</span>
+        <h3>Где заработать на {token.symbol}</h3>
+        <span>{token.best ? `${money(token.potentialYearlyUsd)} в год с вашей позиции` : "проверенных вариантов нет"}</span>
       </div>
       <p className="hint" style={{ marginBottom: 16 }}>
         {token.best
-          ? "Сортировка не по «самому жирному APY», а по устойчивой доходности: спот-ставка подрезана средней за 30 дней, учтены глубина пула, доля наградных токенов и риск протокола."
-          : `Однотокенного стейкинга или лендинга с приемлемым риском по ${token.symbol} нет — только пулы ниже, где доход держится на эмиссии или тонком TVL. Ставить туда основную позицию не стоит.`}
+          ? "Сортируем не по самой большой ставке, а по той, которая держится: текущую доходность подрезаем средней за 30 дней и учитываем, сколько денег в пуле, какая часть дохода платится наградными токенами и надёжен ли сам протокол."
+          : `Спокойных вариантов по ${token.symbol} нет — ниже только пулы, где доход держится на выпуске наградных токенов или где слишком мало денег. Основную позицию туда ставить не стоит.`}
       </p>
 
       {!!single.length && (
         <>
           <div className="section-title">
             <h3>Стейкинг и лендинг</h3>
-            <span>один актив, без impermanent loss</span>
+            <span title="Вкладываете только этот токен: сколько положили, столько и лежит">один токен, ничего докупать не нужно</span>
           </div>
           {single.map((o) => (
             <OppCard key={o.id} o={o} />
@@ -214,8 +214,8 @@ function EarnTab({ token }: { token: TokenAnalysis }) {
       {!!pools.length && (
         <>
           <div className="section-title" style={{ marginTop: 24 }}>
-            <h3>LP-пулы</h3>
-            <span>доход выше, но нужен второй актив и есть IL</span>
+            <h3>Пулы на два токена</h3>
+            <span title="Impermanent loss: если цены двух токенов разъедутся, часть вложенного превратится в тот, что подешевел">доход выше, но нужен второй токен и цены могут разъехаться</span>
           </div>
           {pools.map((o) => (
             <OppCard key={o.id} o={o} />
@@ -224,8 +224,7 @@ function EarnTab({ token }: { token: TokenAnalysis }) {
       )}
 
       <p className="hint" style={{ marginTop: 16, fontSize: 10.5 }}>
-        Точки справа — риск протокола от 1 до 5: TVL пула, impermanent loss, доля наградных токенов в ставке и пометки
-        DeFiLlama. Раскройте «Риски», чтобы увидеть, из чего он сложился.
+        Точки справа — риск протокола от 1 до 5: сколько денег в пуле, могут ли разъехаться цены, какая часть дохода платится наградными токенами и что об этом думает DeFiLlama. Нажмите «Риски», чтобы увидеть расклад.
       </p>
     </>
   );
@@ -278,13 +277,13 @@ function OppCard({ o }: { o: Opportunity }) {
           </span>{" "}
           <span style={{ color: "#9aa1af", fontSize: 10 }}>{o.chain}</span>
           <small className="mono">
-            {o.pair} · TVL ${short(o.tvlUsd)}
-            {o.apyReward ? ` · база ${(o.apyBase ?? 0).toFixed(1)}% + награды ${o.apyReward.toFixed(1)}%` : ""}
+            {o.pair} · в пуле ${short(o.tvlUsd)}
+            {o.apyReward ? ` · сам доход ${(o.apyBase ?? 0).toFixed(1)}% + наградные токены ${o.apyReward.toFixed(1)}%` : ""}
           </small>
         </div>
         <div className="opp-apy">
           <b className="mono">{o.apy.toFixed(1)}%</b>
-          <span>годовых</span>
+          <span>в год</span>
         </div>
         <div style={{ flex: "0 0 84px", textAlign: "right" }}>
           <RiskDots risk={o.risk} />
@@ -301,7 +300,7 @@ function OppCard({ o }: { o: Opportunity }) {
         </button>
         {o.apyMean30d != null && (
           <span className="mono">
-            средний за 30д: {o.apyMean30d.toFixed(1)}%{o.trend === "down" ? " ↓" : o.trend === "up" ? " ↑" : ""}
+            в среднем за 30 дней: {o.apyMean30d.toFixed(1)}%{o.trend === "down" ? " ↓" : o.trend === "up" ? " ↑" : ""}
           </span>
         )}
         <a href={o.url} target="_blank" rel="noreferrer" className="link-button" style={{ marginLeft: "auto" }}>
@@ -322,16 +321,16 @@ function OppCard({ o }: { o: Opportunity }) {
           {extra?.history && extra.history.points.length > 5 && (
             <div style={{ marginTop: 12, marginLeft: -18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                <span style={{ fontWeight: 700 }}>Ставка за полгода</span>
+                <span style={{ fontWeight: 700 }}>Как менялась ставка за полгода</span>
                 <span className="mono">
-                  медиана 90д {extra.history.apyMedian90d?.toFixed(1)}% · диапазон {extra.history.apyMin90d?.toFixed(1)}–
+                  обычная ставка {extra.history.apyMedian90d?.toFixed(1)}% · разброс {extra.history.apyMin90d?.toFixed(1)}–
                   {extra.history.apyMax90d?.toFixed(1)}%
                 </span>
               </div>
               <ApySpark points={extra.history.points} />
               {extra.history.apyMedian90d != null && o.apy > extra.history.apyMedian90d * 2 && (
                 <div style={{ color: "#b9741a", marginTop: 4 }}>
-                  Сейчас вдвое выше медианы — ставка, скорее всего, вернётся к обычной
+                  Сейчас вдвое выше обычной — скорее всего, вернётся назад
                 </div>
               )}
             </div>
@@ -356,8 +355,8 @@ function WhyTab({ token }: { token: TokenAnalysis }) {
   return (
     <>
       <div className="section-title">
-        <h3>Из чего собрался скор {token.score}/100</h3>
-        <span>вес фактора в баллах</span>
+        <h3>Почему риск {riskOf(token.score).short}</h3>
+        <span>вклад каждого фактора</span>
       </div>
       {token.reasons.map((r, i) => (
         <div className="reason" key={i}>
@@ -381,34 +380,34 @@ function WhyTab({ token }: { token: TokenAnalysis }) {
             <small>{m.rank ? `#${m.rank} по рынку` : "вне топа"}</small>
           </div>
           <div>
-            <span>Объём 24ч</span>
+            <span>Наторговали за сутки</span>
             <strong className="mono">${short(m.volume24h)}</strong>
-            <small>{m.marketCap ? `${((m.volume24h / m.marketCap) * 100).toFixed(1)}% капитализации` : ""}</small>
+            <small>{m.marketCap ? `${((m.volume24h / m.marketCap) * 100).toFixed(1)}% от капитализации` : ""}</small>
           </div>
           <div>
-            <span>От максимума</span>
+            <span>Ниже исторического максимума</span>
             <strong className="mono">{pct(m.athChangePct, 0)}</strong>
-            <small>исторический хай</small>
+            <small>от лучшей цены в истории</small>
           </div>
           <div>
-            <span>В обороте</span>
+            <span>Выпущено в рынок</span>
             <strong className="mono">
               {m.circulatingSupply && m.totalSupply ? `${((m.circulatingSupply / m.totalSupply) * 100).toFixed(0)}%` : "—"}
             </strong>
-            <small>{m.totalSupply ? `из ${short(m.totalSupply)} всего` : ""}</small>
+            <small>{m.totalSupply ? `из ${short(m.totalSupply)} всех токенов — остальное впереди` : ""}</small>
           </div>
           <div>
-            <span>Надёжный APY</span>
+            <span>Проверенный стейкинг</span>
             <strong className="mono">{token.best ? `${token.best.apy.toFixed(1)}%` : "нет"}</strong>
-            <small>{token.best ? `${token.best.project}, риск ${token.best.risk}/5` : "только высокий риск"}</small>
+            <small>{token.best ? `${token.best.project}, риск ${token.best.risk} из 5` : "только рискованные варианты"}</small>
           </div>
           <div>
-            <span>Тон новостей</span>
+            <span>Новостной фон</span>
             <strong className="mono">{token.newsTone.toFixed(1)}</strong>
-            <small>шкала от −3 до +3</small>
+            <small>от −3 (плохо) до +3 (хорошо)</small>
           </div>
           <div>
-            <span>Фондирование перпа</span>
+            <span>Плата за плечо</span>
             <strong
               className="mono"
               style={{
@@ -422,15 +421,15 @@ function WhyTab({ token }: { token: TokenAnalysis }) {
                         : "var(--ink)",
               }}
             >
-              {token.funding == null ? "нет перпа" : `${(token.funding * 3 * 365 * 100).toFixed(0)}%/год`}
+              {token.funding == null ? "фьючерса нет" : `${(token.funding * 3 * 365 * 100).toFixed(0)}% в год`}
             </strong>
             <small>
               {token.funding == null
                 ? "фьючерса на Binance нет"
                 : token.funding > 0.0004
-                  ? "в лонгах тесно — риск каскада ликвидаций"
+                  ? "за лонги платят дорого — толпа стоит в покупках, риск обвала"
                   : token.funding < -0.0002
-                    ? "платят шортистам — давление продавцов"
+                    ? "платят тем, кто стоит в продажах — давят продавцы"
                     : "нейтрально"}
             </small>
           </div>
@@ -573,8 +572,8 @@ function ExitTab({
     <>
       <p className="hint" style={{ marginBottom: 16, color: bad ? "#a83c42" : "var(--muted)" }}>
         {bad
-          ? `Позиция ${money(token.valueUsd)} с health ${token.score}/100. Ниже — как выйти, не уронив себе цену, и куда переложить деньги.`
-          : `Позиция в порядке (health ${token.score}/100), продавать причин нет. Инструменты ниже — если решение всё равно нужно.`}
+          ? `Позиция ${money(token.valueUsd)}, риск ${riskOf(token.score).short}. Ниже — как выйти, не уронив себе цену, и куда переложить деньги.`
+          : `Позиция в порядке, риск ${riskOf(token.score).short}. Продавать причин нет — инструменты ниже, если решение всё равно нужно.`}
       </p>
 
       {L && (
@@ -582,7 +581,7 @@ function ExitTab({
           <div className="depth-head">
             <div>
               <span className="label" style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6 }}>
-                ЁМКОСТЬ ВЫХОДА
+                СКОЛЬКО МОЖНО ПРОДАТЬ СРАЗУ
               </span>
               <strong className="mono" style={{ display: "block", marginTop: 6 }}>
                 {money(L.sellCapacityUsd)}
@@ -602,20 +601,19 @@ function ExitTab({
           {L.binance && (
             <>
               <p className="hint" style={{ marginBottom: 10, fontSize: 10.5 }}>
-                Стакан {L.binance.venue} {L.binance.pair} · спред {L.binance.spreadPct.toFixed(3)}% · сколько уходит в
-                биды при просадке цены:
+                {L.binance.venue}, пара {L.binance.pair}. Разница между покупкой и продажей {L.binance.spreadPct.toFixed(3)}%. Сколько заявок на покупку стоит в очереди:
               </p>
               <div className="depth-ladder">
                 <div>
-                  <span>до −0.5%</span>
+                  <span>уронив цену на 0.5%</span>
                   <b className="mono">{money(L.binance.usd05)}</b>
                 </div>
                 <div>
-                  <span>до −1%</span>
+                  <span>на 1%</span>
                   <b className="mono">{money(L.binance.usd1)}</b>
                 </div>
                 <div>
-                  <span>до −2%</span>
+                  <span>на 2%</span>
                   <b className="mono">{money(L.binance.usd2)}</b>
                 </div>
               </div>
@@ -625,7 +623,7 @@ function ExitTab({
           {!!L.dexPairs.length && (
             <>
               <p className="hint" style={{ margin: "14px 0 8px", fontSize: 10.5 }}>
-                DEX-пулы: ликвидность {money(L.dexTotalUsd)} в {L.dexPairs.length} парах (DexScreener)
+                Пулы на DEX: {money(L.dexTotalUsd)} в {L.dexPairs.length} парах
               </p>
               {L.dexPairs.map((p) => (
                 <a key={p.url} href={p.url} target="_blank" rel="noreferrer" className="venue-row" style={{ borderRadius: 8 }}>
@@ -634,7 +632,7 @@ function ExitTab({
                   </b>
                   <span className="mono">{p.pair}</span>
                   <span className="mono" style={{ color: "#8b93a4" }}>
-                    пул {money(p.liquidityUsd)} · оборот {money(p.volume24h)}
+                    в пуле {money(p.liquidityUsd)} · за сутки {money(p.volume24h)}
                   </span>
                   <ArrowUpRight size={12} style={{ marginLeft: "auto" }} />
                 </a>
@@ -644,7 +642,7 @@ function ExitTab({
 
           {!L.binance && !L.dexPairs.length && (
             <p className="hint" style={{ fontSize: 10.5 }}>
-              Ни пары на Binance, ни DEX-пулов не нашлось — выход придётся искать вручную.
+              Ни пары на Binance, ни пулов на DEX не нашлось — площадку для продажи придётся искать руками.
             </p>
           )}
         </div>
@@ -652,7 +650,7 @@ function ExitTab({
 
       {venues === null && token.meta?.coinId && (
         <p className="hint" style={{ marginBottom: 14, fontSize: 10.5 }}>
-          Загружаю площадки со спредами…
+          Смотрю, где сейчас лучше продавать…
         </p>
       )}
 
@@ -660,7 +658,7 @@ function ExitTab({
         <>
           <div className="section-title">
             <h3>Где продавать</h3>
-            <span>по объёму, со спредом bid/ask</span>
+            <span title="Спред — разница между ценой покупки и продажи. Это ваша потеря на сделке">по обороту, со спредом</span>
           </div>
           <div className="venue-list">
             {venues.map((v) => (
@@ -668,7 +666,7 @@ function ExitTab({
                 <b>{v.name}</b>
                 <span className="mono">{v.pair}</span>
                 <span className="mono" style={{ color: "#8b93a4" }}>
-                  {money(v.volumeUsd)} / сутки
+                  {money(v.volumeUsd)} за сутки
                 </span>
                 <span
                   className="spread mono"
@@ -695,7 +693,7 @@ function ExitTab({
             </div>
             <div className="opp-apy">
               <b className="mono">{stable.apy.toFixed(1)}%</b>
-              <span>годовых</span>
+              <span>в год</span>
             </div>
           </div>
           <div className="opp-foot">
@@ -719,7 +717,7 @@ function ExitTab({
       ))}
 
       <p className="hint" style={{ marginTop: 16, fontSize: 10.5 }}>
-        Цифры — расчёт по публичным данным CoinGecko и DeFiLlama. Не инвестиционная рекомендация.
+        Все цифры — расчёт по публичным данным CoinGecko, DeFiLlama и биржевых стаканов. Это не инвестиционная рекомендация.
       </p>
     </>
   );

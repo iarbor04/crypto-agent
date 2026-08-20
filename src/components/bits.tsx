@@ -1,6 +1,6 @@
 "use client";
 
-import { pct, scoreColor } from "@/lib/format";
+import { pct, riskOf } from "@/lib/format";
 
 /** Спарклайн на чистом SVG — в дизайн-системе нет чарт-библиотеки. */
 export function Sparkline({ data, width = 88, height = 26 }: { data: number[]; width?: number; height?: number }) {
@@ -27,15 +27,18 @@ export function Sparkline({ data, width = 88, height = 26 }: { data: number[]; w
   );
 }
 
-export function Health({ score }: { score: number }) {
+/**
+ * Полоса риска: заполнение растёт вместе с риском, поэтому «длинная красная»
+ * означает «плохо» без всяких пояснений. Подпись — словом, не числом.
+ */
+export function RiskMeter({ score, withLabel = true }: { score: number; withLabel?: boolean }) {
+  const risk = riskOf(score);
   return (
-    <div className="health">
-      <div className="health-bar">
-        <span style={{ width: `${score}%`, background: scoreColor(score) }} />
+    <div className="risk" title={risk.hint}>
+      <div className="risk-bar">
+        <span style={{ width: `${risk.pct}%`, background: risk.color }} />
       </div>
-      <strong className="mono" style={{ color: scoreColor(score) }}>
-        {score}
-      </strong>
+      {withLabel && <strong style={{ color: risk.color }}>{risk.short}</strong>}
     </div>
   );
 }
