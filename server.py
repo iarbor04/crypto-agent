@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import socket
 import socketserver
 import sys
 import threading
@@ -24,7 +25,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-from lib import market, sources, store  # noqa: E402
+from lib import market, net, sources, store  # noqa: E402
 from lib.agent import (  # noqa: E402
     ask_ascn,
     ascn_credentials,
@@ -52,6 +53,11 @@ PORT = int(os.environ.get("PORT", "3500"))
 PUBLIC_DIR = os.path.join(ROOT, "public")
 
 
+def _bound_sockets() -> None:
+    """Ни одно соединение не должно висеть без предела, даже если про таймаут забыли."""
+    socket.setdefaulttimeout(30)
+
+
 def load_env() -> None:
     """Читаем .env.local без сторонних библиотек. Файла может и не быть."""
     for name in (".env.local", ".env"):
@@ -77,7 +83,8 @@ def api_analysis(_: Dict[str, str], __: Any) -> Any:
 
 
 def api_health(_: Dict[str, str], __: Any) -> Any:
-    """Проверяет сервер и доступность внешних источников по свежести кэшей."""
+    """Проверяет сервер, доступ наружу и свежесть кэшей по каждому источнику."""
+    egress = net.egress_state()
     checks = [
         ("CoinGecko · цены", "цены, объёмы, спарклайны", "markets-", 30),
         ("CoinGecko · профили", "ранг, категории, контракты", "coin-", 1440),
@@ -121,6 +128,7 @@ def api_health(_: Dict[str, str], __: Any) -> Any:
         "coingeckoKey": bool(os.environ.get("COINGECKO_API_KEY")),
         "agentSecretSet": bool(os.environ.get("AGENT_SECRET")),
         "scheduler": settings["schedule"],
+        "egress": {"ok": egress["ok"], "reason": egress["reason"]},
         "tzdata": tzdata_available(),
         "timezoneNote": zone_note(settings["schedule"]["timezone"]),
         "sources": sources_state,
@@ -394,6 +402,7 @@ class Server(socketserver.ThreadingTCPServer):
 
 def main() -> None:
     load_env()
+    _bound_sockets()
     store.ensure_dirs()
     start_scheduler()
     httpd = Server((HOST, PORT), Handler)

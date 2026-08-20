@@ -11,6 +11,7 @@ from __future__ import annotations
 import gzip
 import json
 import os
+import socket
 import ssl
 import threading
 import time
@@ -20,6 +21,41 @@ import urllib.request
 from typing import Any, Dict, Optional
 
 USER_AGENT = "crypto-agent/1.0 (python)"
+
+# Песочницы часто не пускают наружу, причём брандмауэр молча дропает пакеты:
+# каждое соединение висит до своего таймаута, и разбор портфеля упирается
+# в общий дедлайн вместо секунды. Поэтому egress проверяется одной короткой
+# пробой и результат держится минуту: пока наружу нельзя, источники падают
+# сразу и наверх уходят кэш и честное предупреждение.
+EGRESS_PROBE = ("api.coingecko.com", 443)
+EGRESS_TTL = 60.0
+_egress = {"ok": None, "at": 0.0, "reason": ""}
+_egress_lock = threading.Lock()
+
+
+class OfflineError(Exception):
+    """Наружу нет доступа — источник спрашивать бессмысленно."""
+
+
+def egress_state(force: bool = False) -> Dict[str, Any]:
+    now = time.time()
+    with _egress_lock:
+        fresh = _egress["ok"] is not None and (now - _egress["at"]) < EGRESS_TTL
+        if fresh and not force:
+            return dict(_egress)
+    ok, reason = True, ""
+    try:
+        sock = socket.create_connection(EGRESS_PROBE, timeout=4)
+        sock.close()
+    except Exception as e:
+        ok, reason = False, "%s: %s" % (type(e).__name__, e)
+    with _egress_lock:
+        _egress.update({"ok": ok, "at": time.time(), "reason": reason})
+        return dict(_egress)
+
+
+def offline() -> bool:
+    return egress_state()["ok"] is False
 
 # У части хостов на старых системах цепочка сертификатов не проверяется —
 # создаём контекст один раз и не отключаем проверку.
@@ -36,6 +72,8 @@ class HttpError(Exception):
 
 def fetch_text(url: str, timeout: float = 20.0, headers: Optional[Dict[str, str]] = None,
                method: str = "GET", data: Optional[bytes] = None) -> str:
+    if offline():
+        raise OfflineError("нет доступа наружу")
     req = urllib.request.Request(url, method=method, data=data)
     req.add_header("User-Agent", USER_AGENT)
     req.add_header("Accept-Encoding", "gzip")
