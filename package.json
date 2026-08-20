@@ -1,0 +1,31 @@
+{
+  "name": "crypto-agent",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3500",
+    "build": "next build",
+    "start": "next start -p 3500",
+    "lint": "eslint",
+    "agent": "node scripts/run-agent.mjs",
+    "warm": "node scripts/warm.mjs",
+    "health": "node -e \"fetch(process.env.APP_URL||`http://localhost:${process.env.PORT||3500}`+`/api/health`).then(r=>r.json()).then(h=>console.log(JSON.stringify(h,null,2)))\""
+  },
+  "dependencies": {
+    "lucide-react": "^1.33.0",
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=20.9"
+  }
+}
