@@ -1,4 +1,4 @@
-import { readJson, writeJson } from "./store";
+import { readJson, updateJson } from "./store";
 
 export type Schedule = {
   enabled: boolean;
@@ -9,12 +9,19 @@ export type Schedule = {
   catchUp: boolean;
 };
 
+export type AiSettings = {
+  enabled: boolean;
+  /** сколько токенов отдавать ассистенту за один прогон: каждый — 3-6 минут */
+  maxTokensPerRun: number;
+};
+
 export type Settings = {
   botToken: string;
   chatId: string;
   /** присылать сводку даже когда важного ничего нет */
   sendEmptyDigest: boolean;
   schedule: Schedule;
+  ai: AiSettings;
 };
 
 const serverTimezone = () => {
@@ -53,19 +60,30 @@ export async function getSettings(): Promise<Settings> {
     chatId: saved.chatId || process.env.TELEGRAM_CHAT_ID || "",
     sendEmptyDigest: saved.sendEmptyDigest ?? false,
     schedule: normalizeSchedule(saved.schedule),
+    ai: {
+      enabled: saved.ai?.enabled ?? true,
+      maxTokensPerRun: Math.max(0, Math.min(Number(saved.ai?.maxTokensPerRun ?? 3), 8)),
+    },
   };
 }
 
+/**
+ * Чтение и запись внутри одной блокировки: интерфейс сохраняет настройки
+ * пачками (переключатель, потом пресет), и без этого второе сохранение
+ * успевало прочитать файл до записи первого и затирало его.
+ */
 export async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
-  const current = await readJson<Partial<Settings>>("settings.json", {});
-  const next: Settings = {
+  await updateJson<Partial<Settings>>("settings.json", {}, (current) => ({
     botToken: typeof patch.botToken === "string" ? patch.botToken.trim() : current.botToken ?? "",
     chatId: typeof patch.chatId === "string" ? patch.chatId.trim() : current.chatId ?? "",
     sendEmptyDigest:
       typeof patch.sendEmptyDigest === "boolean" ? patch.sendEmptyDigest : current.sendEmptyDigest ?? false,
     schedule: normalizeSchedule({ ...current.schedule, ...patch.schedule }),
-  };
-  await writeJson("settings.json", next);
+    ai: {
+      enabled: patch.ai?.enabled ?? current.ai?.enabled ?? true,
+      maxTokensPerRun: Math.max(0, Math.min(Number(patch.ai?.maxTokensPerRun ?? current.ai?.maxTokensPerRun ?? 3), 8)),
+    },
+  }));
   return getSettings();
 }
 

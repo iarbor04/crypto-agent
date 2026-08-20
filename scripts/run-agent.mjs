@@ -26,7 +26,10 @@ if (!secret) {
   process.exit(1);
 }
 
-const res = await fetch(`${base}/api/agent/run?secret=${encodeURIComponent(secret)}`, { method: "POST" });
+const res = await fetch(`${base}/api/agent/run?wait=1&secret=${encodeURIComponent(secret)}`, {
+  method: "POST",
+  signal: AbortSignal.timeout(15 * 60_000),
+});
 const json = await res.json();
 
 if (!res.ok) {

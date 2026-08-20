@@ -2389,3 +2389,80 @@ a {
 .external[open] summary::before {
   content: "− ";
 }
+
+/* ————— Прогресс фоновой задачи ————— */
+.job-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  margin-bottom: 18px;
+  border: 1px solid #dfe3fb;
+  border-radius: 14px;
+  background: var(--blue-soft);
+  color: #3b48b8;
+}
+
+.job-banner strong {
+  display: block;
+  font-size: 13px;
+}
+
+.job-banner small {
+  display: block;
+  margin-top: 4px;
+  color: #5a67c9;
+  font-size: 11px;
+}
+
+.job-spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 2px solid #c3cbf7;
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.job-progress {
+  margin-left: auto;
+  width: 140px;
+  height: 6px;
+  border-radius: 6px;
+  background: #ffffffaa;
+  overflow: hidden;
+}
+
+.job-progress span {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: var(--blue);
+  transition: width 400ms ease;
+}
+
+.ai-block {
+  border-top: 1px solid var(--line);
+  background: #fbfbfd;
+}
+
+.ai-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px 0;
+  font-size: 12px;
+}
+
+.ai-head span {
+  color: #9aa1af;
+  font-size: 10.5px;
+}

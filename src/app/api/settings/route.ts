@@ -18,6 +18,7 @@ export async function GET() {
     botTokenMask: mask(s.botToken),
     hasBotToken: Boolean(s.botToken),
     schedule: s.schedule,
+    ai: s.ai,
     next: s.schedule.enabled ? nextRun(s.schedule.times, s.schedule.timezone) : null,
     lastScheduledRun: state.lastRunAt,
   });
@@ -30,6 +31,7 @@ export async function POST(req: Request) {
     ...(typeof body.chatId === "string" ? { chatId: body.chatId } : {}),
     ...(typeof body.sendEmptyDigest === "boolean" ? { sendEmptyDigest: body.sendEmptyDigest } : {}),
     ...(body.schedule && typeof body.schedule === "object" ? { schedule: body.schedule as never } : {}),
+    ...(body.ai && typeof body.ai === "object" ? { ai: body.ai as never } : {}),
   });
   return Response.json({
     ok: true,

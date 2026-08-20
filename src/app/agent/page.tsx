@@ -12,11 +12,23 @@ type SettingsView = {
   botTokenMask: string;
   hasBotToken: boolean;
   schedule: Schedule;
+  ai: AiSettings;
   next: NextRun;
   lastScheduledRun: string | null;
 };
 type Detected = { bot: { username: string; name: string }; chats: { id: string; title: string; type: string }[] };
 type Schedule = { enabled: boolean; times: string[]; timezone: string; catchUp: boolean };
+type AiSettings = { enabled: boolean; maxTokensPerRun: number };
+type Job = {
+  id: string;
+  status: "running" | "done" | "error";
+  trigger: string;
+  startedAt: string;
+  step: string;
+  aiDone: number;
+  aiTotal: number;
+  error?: string;
+} | null;
 type NextRun = { at: string; inMinutes: number; today: boolean } | null;
 
 const CURL = `curl -X POST "http://localhost:3500/api/agent/run?secret=$AGENT_SECRET"`;
@@ -46,6 +58,8 @@ export default function AgentPage() {
   const [detected, setDetected] = useState<Detected | null>(null);
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [next, setNext] = useState<NextRun>(null);
+  const [ai, setAi] = useState<AiSettings | null>(null);
+  const [job, setJob] = useState<Job>(null);
 
   const loadAll = useCallback(async () => {
     const [s, h] = await Promise.all([
@@ -58,12 +72,28 @@ export default function AgentPage() {
     setRuns(h.runs ?? []);
     setSchedule(s.schedule ?? null);
     setNext(s.next ?? null);
+    setAi(s.ai ?? null);
   }, []);
 
   useEffect(() => {
     // загрузка при монтировании: setState срабатывает уже после await, не в теле эффекта
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAll();
+  }, [loadAll]);
+
+  // ИИ-разбор идёт минутами, поэтому следим за прогрессом задачи
+  useEffect(() => {
+    const poll = () =>
+      fetch("/api/agent/job", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d: { job: Job }) => {
+          setJob(d.job);
+          if (d.job && d.job.status !== "running") loadAll();
+        })
+        .catch(() => {});
+    poll();
+    const timer = setInterval(poll, 4000);
+    return () => clearInterval(timer);
   }, [loadAll]);
 
   async function saveSettings() {
@@ -149,20 +179,31 @@ export default function AgentPage() {
     setMsg(null);
     try {
       const res = await fetch("/api/agent/run", { method: "POST" });
-      const json = (await res.json()) as AgentRun & { error?: string };
+      const json = (await res.json()) as { job?: Job; alreadyRunning?: boolean; error?: string };
       if (json.error) throw new Error(json.error);
-      setMsg(
-        json.telegram.sent
-          ? { text: `Разбор готов, сводка отправлена в Telegram (${json.alerts.length} сигналов)`, ok: true }
-          : { text: `Разбор готов, но в Telegram не ушло: ${json.telegram.error}`, ok: false },
-      );
-      await loadAll();
-      setExpanded(json.id);
+      setJob(json.job ?? null);
+      setMsg({
+        text: json.alreadyRunning
+          ? "Разбор уже идёт — прогресс ниже"
+          : "Разбор запущен. ИИ-анализ одного токена занимает 3–6 минут, прогресс виден ниже — можно закрыть страницу.",
+        ok: true,
+      });
     } catch (e) {
       setMsg({ text: e instanceof Error ? e.message : String(e), ok: false });
     } finally {
       setBusy(null);
     }
+  }
+
+  async function saveAi(patch: Partial<AiSettings>) {
+    if (!ai) return;
+    const nextAi = { ...ai, ...patch };
+    setAi(nextAi);
+    await fetch("/api/settings", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ai: nextAi }),
+    }).catch(() => setMsg({ text: "Не удалось сохранить настройки ИИ", ok: false }));
   }
 
   const ready = Boolean(settings?.hasBotToken && settings?.chatId);
@@ -369,6 +410,71 @@ export default function AgentPage() {
         </div>
       </div>
 
+      {job?.status === "running" && (
+        <div className="job-banner">
+          <span className="job-spinner" />
+          <div>
+            <strong>Разбор идёт: {job.step}</strong>
+            <small>
+              {job.aiTotal > 0
+                ? `ИИ-анализ токенов: ${job.aiDone} из ${job.aiTotal} · каждый занимает 3–6 минут`
+                : "считаю цены, ликвидность и новости"}
+              {" · запущен "}
+              {new Date(job.startedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+            </small>
+          </div>
+          {job.aiTotal > 0 && (
+            <div className="job-progress">
+              <span style={{ width: `${Math.round((job.aiDone / job.aiTotal) * 100)}%` }} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {job?.status === "error" && (
+        <div className="error-banner">Разбор упал: {job.error ?? "неизвестная ошибка"}</div>
+      )}
+
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card-head">
+          <div>
+            <h2>ИИ-разбор токенов</h2>
+            <p>
+              Ассистент ASCN смотрит ончейн, рынок, новости и ликвидации по каждому важному токену и присылает разбор
+              отдельным сообщением
+            </p>
+          </div>
+          <label className="switch" title="Включить ИИ-разбор">
+            <input
+              type="checkbox"
+              checked={Boolean(ai?.enabled)}
+              onChange={(e) => saveAi({ enabled: e.target.checked })}
+              disabled={!ai}
+            />
+            <span />
+          </label>
+        </div>
+        <div className="card-body">
+          <span className="label" style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6 }}>
+            СКОЛЬКО ТОКЕНОВ РАЗБИРАТЬ ЗА ПРОГОН
+          </span>
+          <div className="preset-row" style={{ marginTop: 10 }}>
+            {[1, 2, 3, 5].map((n) => (
+              <button key={n} className={ai?.maxTokensPerRun === n ? "active" : ""} onClick={() => saveAi({ maxTokensPerRun: n })}>
+                {n}
+              </button>
+            ))}
+            <span style={{ marginLeft: 6 }}>
+              берутся те, где что-то изменилось: смена вердикта, новости, обвал, депег
+            </span>
+          </div>
+          <p className="hint" style={{ marginTop: 14 }}>
+            Один токен — это 3–6 минут ожидания ответа, запросы уходят параллельно. Если важных изменений нет, ИИ не
+            вызывается вообще и квота не тратится. Ключ берётся из <code>ASCN_API_KEY</code> в <code>.env.local</code>.
+          </p>
+        </div>
+      </div>
+
       <h2 className="section-heading">История запусков</h2>
       {!runs && <Loader text="Загружаю историю" />}
       {runs && !runs.length && (
@@ -403,6 +509,9 @@ export default function AgentPage() {
                     {money(r.totalValueUsd)}
                   </span>
                   <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {!!r.ai?.filter((a) => a.content).length && (
+                      <span className="pill pill-blue">ИИ · {r.ai.filter((a) => a.content).length}</span>
+                    )}
                     {critical > 0 && <span className="pill pill-red">{critical} критич</span>}
                     {warning > 0 && <span className="pill pill-amber">{warning} внимание</span>}
                     {positive > 0 && <span className="pill pill-green">{positive} позитив</span>}
@@ -413,10 +522,21 @@ export default function AgentPage() {
                   </span>
                 </button>
                 {open && (
-                  <pre className="run-summary">
-                    {r.summary}
-                    {!r.telegram.sent && r.telegram.error ? `\n\n[telegram] ${r.telegram.error}` : ""}
-                  </pre>
+                  <>
+                    <pre className="run-summary">
+                      {r.summary}
+                      {!r.telegram.sent && r.telegram.error ? `\n\n[telegram] ${r.telegram.error}` : ""}
+                    </pre>
+                    {r.ai?.map((a) => (
+                      <div className="ai-block" key={a.symbol}>
+                        <div className="ai-head">
+                          <strong>🔍 {a.symbol} — разбор ИИ</strong>
+                          <span>{a.content ? `${a.seconds} с` : `не получилось: ${a.error}`}</span>
+                        </div>
+                        {a.content && <pre className="run-summary" style={{ borderTop: 0 }}>{a.content}</pre>}
+                      </div>
+                    ))}
+                  </>
                 )}
               </div>
             );

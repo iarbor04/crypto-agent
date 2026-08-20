@@ -177,6 +177,26 @@ export type Alert = {
   action?: string;
 };
 
+export type AgentJob = {
+  id: string;
+  status: "running" | "done" | "error";
+  trigger: "cron" | "manual";
+  startedAt: string;
+  finishedAt?: string;
+  step: string;
+  aiDone: number;
+  aiTotal: number;
+  runId?: string;
+  error?: string;
+};
+
+export type AiTokenAnalysis = {
+  symbol: string;
+  content: string | null;
+  error: string | null;
+  seconds: number;
+};
+
 export type AgentRun = {
   id: string;
   at: string;
@@ -185,4 +205,7 @@ export type AgentRun = {
   alerts: Alert[];
   telegram: { sent: boolean; error?: string };
   summary: string;
+  /** разборы от ИИ-ассистента ASCN по важным токенам */
+  ai?: AiTokenAnalysis[];
+  aiError?: string;
 };
