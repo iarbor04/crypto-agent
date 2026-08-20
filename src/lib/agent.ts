@@ -1,5 +1,5 @@
 import { analyzePortfolio } from "./analyze";
-import { askAscn, buildTokenPrompt, hasAscnKey, markdownToTelegram } from "./ascn";
+import { askAscn, buildTokenPrompt, hasAscnKey, markdownToTelegram, parseProsCons } from "./ascn";
 import { riskOf } from "./format";
 import { readJson, writeJson } from "./store";
 import { escapeHtml, getSettings, sendTelegram } from "./telegram";
@@ -50,7 +50,7 @@ function diffAlerts(a: Analysis, prev: Snapshot | null): Alert[] {
         symbol: t.symbol,
         title: `${t.symbol}: вердикт изменился ${before.verdict} → ${t.verdict}`,
         body: t.reasons.slice(0, 2).map((r) => `• ${r.text}`).join("\n"),
-        action: worse ? "Пересмотреть позицию" : "Можно докупать/стейкать",
+        action: worse ? "Оценка ухудшилась" : "Оценка улучшилась",
       });
     } else if (Math.abs(t.score - before.score) >= 12) {
       out.push({
@@ -153,9 +153,6 @@ export function buildDigest(a: Analysis, alerts: Alert[], prev: Snapshot | null)
     lines.push("");
     lines.push(`💰 На стейкинге можно заработать ${MONEY(a.potentialYearlyUsd)} в год, не продавая токены`);
   }
-  const url = process.env.APP_URL || "http://localhost:3500";
-  lines.push("");
-  lines.push(`<a href="${url}">Открыть дашборд</a>`);
   return lines.join("\n");
 }
 
@@ -248,6 +245,20 @@ export async function runAgent(trigger: "cron" | "manual"): Promise<AgentRun> {
       return res;
     }),
   );
+
+  // разборы кладём в отдельный файл: карточки показывают их до следующего прогона
+  const fresh = aiResults.filter((r) => r.content);
+  if (fresh.length) {
+    const stored = await readJson<Record<string, { at: string; pros: string[]; cons: string[]; content: string }>>(
+      "ai-insights.json",
+      {},
+    );
+    for (const r of fresh) {
+      const { pros, cons } = parseProsCons(r.content as string);
+      stored[r.symbol.toUpperCase()] = { at: new Date().toISOString(), pros, cons, content: r.content as string };
+    }
+    await writeJson("ai-insights.json", stored);
+  }
 
   await updateJob({ step: "отправляю в Telegram" });
 

@@ -2469,3 +2469,243 @@ a {
   color: #9aa1af;
   font-size: 10.5px;
 }
+
+/* ————— Шкала риска из пяти сегментов ————— */
+.risk-scale {
+  min-width: 210px;
+}
+
+.risk-scale-track {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+}
+
+.risk-scale-track span {
+  height: 7px;
+  border-radius: 6px;
+  background: #e6e9f0;
+  transition: background 200ms ease;
+}
+
+.risk-scale-labels {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.risk-scale-labels span {
+  color: #a9b0be;
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: -0.1px;
+}
+
+.risk-scale-labels span.on {
+  font-weight: 800;
+}
+
+/* ————— Плюсы и минусы двумя блоками ————— */
+.pros-cons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.pros-cons > div {
+  padding: 14px 16px;
+  border-radius: 12px;
+}
+
+.pros-cons .pros {
+  background: #f1faf5;
+}
+
+.pros-cons .cons {
+  background: #fdf2f2;
+}
+
+.pros-cons h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pros-cons .pros h4 {
+  color: #1c8f5a;
+}
+
+.pros-cons .cons h4 {
+  color: #c33b42;
+}
+
+.pros-cons p {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: #3f485a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pros-cons p:last-child {
+  margin-bottom: 0;
+}
+
+.pros-cons p i {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+
+.pros-cons .pros p i {
+  background: var(--green);
+}
+
+.pros-cons .cons p i {
+  background: var(--red);
+}
+
+.pros-cons p.none {
+  color: #9aa1af;
+  font-style: italic;
+}
+
+.pros-cons.compact p {
+  font-size: 11.5px;
+  margin-bottom: 6px;
+}
+
+.risk-verdict {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.risk-verdict h3 {
+  margin: 6px 0 0;
+  font-size: 17px;
+  letter-spacing: -0.4px;
+}
+
+.risk-verdict .step {
+  color: #b5bcc9;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.risk-verdict .step b {
+  color: #6f7789;
+  font-size: 17px;
+}
+
+@media (max-width: 900px) {
+  .pros-cons {
+    grid-template-columns: 1fr;
+  }
+}
+
+.reason-grid-wrap {
+  padding: 18px 20px;
+  border-top: 1px solid var(--line);
+  background: #fcfcfe;
+}
+
+/* ————— Индикаторы ————— */
+.ind-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.ind {
+  padding: 4px 9px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.ind.good,
+.ind-item.good {
+  color: #1c8f5a;
+  background: var(--green-soft);
+}
+
+.ind.bad,
+.ind-item.bad {
+  color: #c33b42;
+  background: var(--red-soft);
+}
+
+.ind.neutral,
+.ind-item.neutral {
+  color: #6f7789;
+  background: var(--soft);
+}
+
+.ind-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.ind-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* ————— Плюсы и минусы в компактной карточке ————— */
+.card-proscons {
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid #edf0f4;
+}
+
+.card-proscons p {
+  display: flex;
+  gap: 7px;
+  margin: 0 0 6px;
+  color: #4a5365;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.card-proscons p:last-child {
+  margin-bottom: 0;
+}
+
+.card-proscons p i {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  margin-top: 5px;
+  border-radius: 50%;
+}
+
+.card-proscons p.p i {
+  background: var(--green);
+}
+
+.card-proscons p.c i {
+  background: var(--red);
+}
+
+@media (max-width: 900px) {
+  .ind-grid {
+    grid-template-columns: 1fr;
+  }
+}

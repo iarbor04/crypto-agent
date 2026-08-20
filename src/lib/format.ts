@@ -34,12 +34,16 @@ export const amount = (n: number) =>
 
 type Tone = "blue" | "green" | "amber" | "red" | "gray";
 
+/**
+ * Состояние позиции, а не приказ: дашборд описывает факт, решение принимает человек.
+ * Раньше здесь было «Продавать» и «Сокращать» — это уже рекомендация.
+ */
 export const VERDICT: Record<Verdict, { label: string; tone: Tone; color: string; hint: string }> = {
-  sell: { label: "Продавать", tone: "red", color: "var(--red)", hint: "Фундамент и динамика против вас — выходить" },
-  reduce: { label: "Сокращать", tone: "amber", color: "var(--amber)", hint: "Срезать позицию или захеджировать" },
-  watch: { label: "Наблюдать", tone: "gray", color: "var(--muted)", hint: "Слабо, но не критично — держать под контролем" },
-  hold: { label: "Держать", tone: "blue", color: "var(--blue)", hint: "Позиция в порядке" },
-  accumulate: { label: "Держать и стейкать", tone: "green", color: "var(--green)", hint: "Сильный актив — можно ставить в стейкинг" },
+  sell: { label: "Тренд сломан", tone: "red", color: "var(--red)", hint: "Динамика, фон и просадка сходятся против позиции" },
+  reduce: { label: "Слабее рынка", tone: "amber", color: "var(--amber)", hint: "Отстаёт от рынка, минусы весомее плюсов" },
+  watch: { label: "Смешанные сигналы", tone: "gray", color: "var(--muted)", hint: "Есть и плюсы, и минусы — картина неоднозначная" },
+  hold: { label: "В рамках рынка", tone: "blue", color: "var(--blue)", hint: "Идёт вместе с рынком, критичного нет" },
+  accumulate: { label: "Сильнее рынка", tone: "green", color: "var(--green)", hint: "Обгоняет рынок, есть где заработать" },
 };
 
 export const KIND: Record<string, string> = {
@@ -55,7 +59,27 @@ export const KIND: Record<string, string> = {
 export const riskColor = (risk: number) =>
   risk <= 2 ? "var(--green)" : risk === 3 ? "var(--amber)" : "var(--red)";
 
-export type RiskLevel = { label: string; short: string; color: string; tone: Tone; pct: number; hint: string };
+export type RiskLevel = {
+  label: string;
+  short: string;
+  color: string;
+  tone: Tone;
+  pct: number;
+  hint: string;
+  /** позиция на шкале из пяти сегментов: 1 — самый риск, 5 — самый спокойный */
+  step: number;
+};
+
+export const RISK_STEPS = ["Критический", "Высокий", "Повышенный", "Умеренный", "Низкий"];
+
+/** Короткий вывод одной фразой: что тут вообще происходит. */
+export const riskHeadline = (score: number, hasUpside: boolean): string => {
+  if (score < 28) return hasUpside ? "Слабый актив, отскок не меняет картину" : "Актив против вас по всем фронтам";
+  if (score < 42) return hasUpside ? "Есть плюсы, но минусы весомее" : "Минусы перевешивают, плюсов не нашлось";
+  if (score < 56) return hasUpside ? "Смешанная картина, требует контроля" : "Слабо, но пока не критично";
+  if (score < 72) return hasUpside ? "Позиция рабочая, риски терпимые" : "Позиция рабочая";
+  return hasUpside ? "Сильная позиция, можно зарабатывать" : "Сильная позиция";
+};
 
 /**
  * Наружу показываем риск, а не абстрактный «health»: длинная красная полоса
@@ -65,14 +89,14 @@ export type RiskLevel = { label: string; short: string; color: string; tone: Ton
 export const riskOf = (score: number): RiskLevel => {
   const pct = Math.max(4, Math.min(100, 100 - score));
   if (score < 28)
-    return { label: "Риск критический", short: "критический", color: "var(--red)", tone: "red", pct, hint: "Фундамент и динамика против позиции — обычно это выход" };
+    return { label: "Риск критический", short: "критический", color: "var(--red)", tone: "red", pct, step: 1, hint: "Фундамент и динамика против позиции — обычно это выход" };
   if (score < 42)
-    return { label: "Риск высокий", short: "высокий", color: "#e0655b", tone: "red", pct, hint: "Позицию стоит сокращать или хеджировать" };
+    return { label: "Риск высокий", short: "высокий", color: "#e0655b", tone: "red", pct, step: 2, hint: "Позицию стоит сокращать или хеджировать" };
   if (score < 56)
-    return { label: "Риск повышенный", short: "повышенный", color: "var(--amber)", tone: "amber", pct, hint: "Слабо, но не критично — держать под контролем" };
+    return { label: "Риск повышенный", short: "повышенный", color: "var(--amber)", tone: "amber", pct, step: 3, hint: "Слабо, но не критично — держать под контролем" };
   if (score < 72)
-    return { label: "Риск умеренный", short: "умеренный", color: "var(--blue)", tone: "blue", pct, hint: "Позиция в порядке" };
-  return { label: "Риск низкий", short: "низкий", color: "var(--green)", tone: "green", pct, hint: "Сильный актив — можно ставить в стейкинг" };
+    return { label: "Риск умеренный", short: "умеренный", color: "var(--blue)", tone: "blue", pct, step: 4, hint: "Позиция в порядке" };
+  return { label: "Риск низкий", short: "низкий", color: "var(--green)", tone: "green", pct, step: 5, hint: "Сильный актив — можно ставить в стейкинг" };
 };
 
 export const scoreColor = (score: number) =>

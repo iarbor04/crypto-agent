@@ -1,6 +1,6 @@
 "use client";
 
-import { pct, riskOf } from "@/lib/format";
+import { RISK_STEPS, pct, riskOf } from "@/lib/format";
 
 /** Спарклайн на чистом SVG — в дизайн-системе нет чарт-библиотеки. */
 export function Sparkline({ data, width = 88, height = 26 }: { data: number[]; width?: number; height?: number }) {
@@ -28,6 +28,31 @@ export function Sparkline({ data, width = 88, height = 26 }: { data: number[]; w
 }
 
 /**
+ * Шкала риска из пяти сегментов с подписанными уровнями: видно и текущий
+ * уровень, и где он относительно остальных. Компактный вариант (полоса
+ * с подписью) остаётся для плотных мест вроде таблицы.
+ */
+export function RiskScale({ score }: { score: number }) {
+  const risk = riskOf(score);
+  return (
+    <div className="risk-scale" title={risk.hint}>
+      <div className="risk-scale-track">
+        {RISK_STEPS.map((label, i) => (
+          <span key={label} className={i + 1 === risk.step ? "on" : ""} style={i + 1 === risk.step ? { background: risk.color } : undefined} />
+        ))}
+      </div>
+      <div className="risk-scale-labels">
+        {RISK_STEPS.map((label, i) => (
+          <span key={label} className={i + 1 === risk.step ? "on" : ""} style={i + 1 === risk.step ? { color: risk.color } : undefined}>
+            {label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Полоса риска: заполнение растёт вместе с риском, поэтому «длинная красная»
  * означает «плохо» без всяких пояснений. Подпись — словом, не числом.
  */
@@ -39,6 +64,48 @@ export function RiskMeter({ score, withLabel = true }: { score: number; withLabe
         <span style={{ width: `${risk.pct}%`, background: risk.color }} />
       </div>
       {withLabel && <strong style={{ color: risk.color }}>{risk.short}</strong>}
+    </div>
+  );
+}
+
+/** Плюсы и минусы двумя блоками — как в референсе: зелёное «за», красное «против». */
+export function ProsCons({
+  pros,
+  cons,
+  compact = false,
+}: {
+  pros: string[];
+  cons: string[];
+  compact?: boolean;
+}) {
+  return (
+    <div className={`pros-cons ${compact ? "compact" : ""}`}>
+      <div className="pros">
+        <h4>Что за позицию</h4>
+        {pros.length ? (
+          pros.map((t, i) => (
+            <p key={i}>
+              <i />
+              {t}
+            </p>
+          ))
+        ) : (
+          <p className="none">Плюсов не нашлось</p>
+        )}
+      </div>
+      <div className="cons">
+        <h4>Что против</h4>
+        {cons.length ? (
+          cons.map((t, i) => (
+            <p key={i}>
+              <i />
+              {t}
+            </p>
+          ))
+        ) : (
+          <p className="none">Явных минусов нет</p>
+        )}
+      </div>
     </div>
   );
 }

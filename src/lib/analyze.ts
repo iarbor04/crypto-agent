@@ -1,6 +1,7 @@
 import { getCoinMeta } from "./coinmeta";
 import { getMarketContext } from "./context";
 import { findHacks, getHacks } from "./hacks";
+import { getIndicators } from "./indicators";
 import { getLiquidity } from "./liquidity";
 import { getMarketBenchmark, getMarkets, resolveCoinId } from "./market";
 import { riskOf } from "./format";
@@ -8,7 +9,8 @@ import { getNews } from "./news";
 import { getPortfolio } from "./portfolio";
 import { scoreToken } from "./score";
 import { getOpportunities, pickSafe } from "./yields";
-import type { Alert, Analysis, MarketContext, MarketData, TokenAnalysis } from "./types";
+import { readJson } from "./store";
+import type { AiInsight, Alert, Analysis, MarketContext, MarketData, TokenAnalysis } from "./types";
 
 const money = (n: number) => `$${Math.round(n).toLocaleString("ru-RU")}`;
 
@@ -131,6 +133,10 @@ export async function analyzePortfolio(): Promise<Analysis> {
       null,
       warnings,
     );
+    const [indicators, aiInsight] = await Promise.all([
+      soft("индикаторы", Math.min(12_000, Math.max(2_000, left())), () => getIndicators(h.symbol), null, warnings),
+      readInsight(h.symbol),
+    ]);
     const hacks = findHacks(allHacks, meta?.name ?? market?.name ?? h.symbol).slice(0, 3);
     const funding = context.funding[h.symbol] ?? null;
 
@@ -159,6 +165,8 @@ export async function analyzePortfolio(): Promise<Analysis> {
       market,
       meta,
       liquidity,
+      indicators,
+      ai: aiInsight,
       funding,
       hacks,
       valueUsd,
@@ -201,6 +209,15 @@ export async function analyzePortfolio(): Promise<Analysis> {
     tokens,
     alerts: buildAlerts(tokens, context),
   };
+}
+
+/** Разбор ассистента по токену, если он свежий: живёт между прогонами агента. */
+async function readInsight(symbol: string): Promise<AiInsight | null> {
+  const all = await readJson<Record<string, AiInsight>>("ai-insights.json", {});
+  const hit = all[symbol.toUpperCase()];
+  if (!hit) return null;
+  const ageHours = (Date.now() - new Date(hit.at).getTime()) / 3_600_000;
+  return ageHours <= 48 ? hit : null;
 }
 
 /**
@@ -246,17 +263,21 @@ export function buildAlerts(tokens: TokenAnalysis[], context?: MarketContext): A
       alerts.push({
         level: "critical",
         symbol: t.symbol,
-        title: `${t.symbol}: пора избавляться — риск ${riskOf(t.score).short}`,
+        title: `${t.symbol}: риск ${riskOf(t.score).short}`,
         body: t.reasons.filter((r) => r.kind === "bad").slice(0, 3).map((r) => `• ${r.text}`).join("\n") || critical?.text || "Слабая динамика и фон",
-        action: `Выходить частями через ${t.exits[0]?.label ?? "DEX"} — $${Math.round(share).toLocaleString("ru-RU")} в позиции`,
+        action: `В позиции $${Math.round(share).toLocaleString("ru-RU")}${
+          t.liquidity?.sellCapacityUsd
+            ? `, рынок съедает за раз $${Math.round(t.liquidity.sellCapacityUsd).toLocaleString("ru-RU")}`
+            : ""
+        }`,
       });
     } else if (t.verdict === "reduce") {
       alerts.push({
         level: "warning",
         symbol: t.symbol,
-        title: `${t.symbol}: сокращать позицию — риск ${riskOf(t.score).short}`,
+        title: `${t.symbol}: риск ${riskOf(t.score).short}`,
         body: t.reasons.filter((r) => r.kind === "bad").slice(0, 2).map((r) => `• ${r.text}`).join("\n"),
-        action: "Срезать половину или захеджировать фьючерсом",
+        action: t.funding != null ? `Фьючерс есть: плата за плечо ${(t.funding * 3 * 365 * 100).toFixed(0)}% в год` : "Фьючерса на Binance нет",
       });
     }
 
@@ -267,7 +288,7 @@ export function buildAlerts(tokens: TokenAnalysis[], context?: MarketContext): A
         symbol: t.symbol,
         title: `${t.symbol}: позитив — ${goodNews.tags.join(", ") || "хорошие новости"}`,
         body: `«${goodNews.title}»`,
-        action: t.best ? `Держать и поставить под ${t.best.apy.toFixed(1)}% (${t.best.project})` : "Держать",
+        action: t.best ? `Ставка ${t.best.apy.toFixed(1)}% в год доступна в ${t.best.project}` : "",
       });
     }
 

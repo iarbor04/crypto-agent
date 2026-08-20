@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { TokenDrawer } from "@/components/TokenDrawer";
-import { Delta, RiskMeter, Loader, Pill } from "@/components/bits";
+import { Delta, ProsCons, RiskMeter, RiskScale, Loader, Pill } from "@/components/bits";
 import { useAnalysis } from "@/components/useAnalysis";
-import { VERDICT, money, short } from "@/lib/format";
+import { VERDICT, money, riskHeadline, riskOf, short } from "@/lib/format";
 import type { TokenAnalysis } from "@/lib/types";
 
 export default function RisksPage() {
@@ -132,9 +132,6 @@ function RiskCard({ t, rank, onOpen }: { t: TokenAnalysis; rank: number; onOpen:
             ))}
           </div>
           <div className="risk-meta">
-            <span style={{ width: 130 }}>
-              <RiskMeter score={t.score} />
-            </span>
             <span className="mono" style={{ color: "var(--ink)", fontWeight: 700 }}>
               {money(t.valueUsd)}
             </span>
@@ -147,56 +144,45 @@ function RiskCard({ t, rank, onOpen }: { t: TokenAnalysis; rank: number; onOpen:
             {t.market && <span>капитализация ${short(t.market.marketCap)}</span>}
           </div>
         </div>
-        <button className="primary-button" onClick={onOpen}>
-          Что делать →
+        <button className="ghost-button" onClick={onOpen}>
+          Подробно
         </button>
       </header>
 
-      <div className="reason-grid">
-        <div>
-          <h4 style={{ color: "#c33b42" }}>Против</h4>
-          {bad.length ? (
-            bad.map((r, i) => (
-              <div className="reason" key={i}>
-                <b className="mono" style={{ color: "var(--red)" }}>
-                  {r.weight.toFixed(0)}
-                </b>
-                <span>{r.text}</span>
-              </div>
-            ))
-          ) : (
-            <p className="hint">Явных минусов нет.</p>
-          )}
+      <div className="reason-grid-wrap">
+        <div className="risk-verdict" style={{ marginBottom: 14 }}>
+          <div>
+            <span className="label" style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6 }}>
+              ОЦЕНКА ПОЗИЦИИ
+            </span>
+            <h3>{riskHeadline(t.score, good.length > 0)}</h3>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+            <RiskScale score={t.score} />
+            <span className="step">
+              <b>{riskOf(t.score).step}</b> / 5
+            </span>
+          </div>
         </div>
-        <div>
-          <h4 style={{ color: "#1c8f5a" }}>За</h4>
-          {good.length ? (
-            good.map((r, i) => (
-              <div className="reason" key={i}>
-                <b className="mono" style={{ color: "var(--green)" }}>
-                  +{r.weight.toFixed(0)}
-                </b>
-                <span>{r.text}</span>
-              </div>
-            ))
-          ) : (
-            <p className="hint">Плюсов не нашлось.</p>
-          )}
-        </div>
+        <ProsCons
+          pros={[...(t.ai?.pros ?? []).slice(0, 2), ...good.map((r) => r.text)]}
+          cons={[...(t.ai?.cons ?? []).slice(0, 2), ...bad.map((r) => r.text)]}
+          compact
+        />
       </div>
 
       <div className="plan-strip">
-        <span className="pill pill-gray">ПЛАН</span>
+        <span className="pill pill-gray">ФАКТЫ</span>
         <span>
-          {t.verdict === "sell"
-            ? `Выходить частями через ${t.exits[0]?.label ?? "DEX"}`
-            : t.verdict === "reduce"
-              ? "Срезать половину позиции или захеджировать фьючерсом"
-              : "Держать под наблюдением, докупать не спешить"}
-          {t.best && t.verdict !== "sell"
-            ? ` · остаток поставить под ${t.best.apy.toFixed(1)}% в ${t.best.project}`
-            : ""}
+          {t.liquidity?.sellCapacityUsd
+            ? `Рынок съедает за раз ${money(t.liquidity.sellCapacityUsd)} — позиция ${money(t.valueUsd)}`
+            : `Позиция ${money(t.valueUsd)}, данных по глубине рынка нет`}
+          {t.best ? ` · доступна ставка ${t.best.apy.toFixed(1)}% в год в ${t.best.project}` : " · проверенного стейкинга нет"}
+          {t.funding != null ? ` · плата за плечо ${(t.funding * 3 * 365 * 100).toFixed(0)}% в год` : ""}
         </span>
+        <button className="link-button" style={{ marginLeft: "auto" }} onClick={onOpen}>
+          Разбор и инструменты →
+        </button>
       </div>
     </article>
   );

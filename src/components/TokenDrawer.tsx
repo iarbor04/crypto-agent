@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { ArrowUpRight, X } from "lucide-react";
-import { KIND, VERDICT, amount as fmtAmount, money, moneySmart, pct, riskOf, short } from "@/lib/format";
+import { KIND, VERDICT, amount as fmtAmount, money, moneySmart, pct, riskHeadline, riskOf, short } from "@/lib/format";
 import type { Opportunity, TokenAnalysis } from "@/lib/types";
 import type { Venue } from "@/lib/liquidity";
-import { Delta, RiskMeter, Pill, RiskDots, Sparkline } from "./bits";
+import { Delta, ProsCons, RiskMeter, RiskScale, Pill, RiskDots, Sparkline } from "./bits";
+import { readIndicators } from "@/lib/indicators-view";
 
 type Tab = "earn" | "why" | "profile" | "news" | "exit";
 
@@ -352,25 +353,53 @@ function OppCard({ o }: { o: Opportunity }) {
 
 function WhyTab({ token }: { token: TokenAnalysis }) {
   const m = token.market;
+  const good = token.reasons.filter((r) => r.kind === "good");
+  const bad = token.reasons.filter((r) => r.kind === "bad");
   return (
     <>
-      <div className="section-title">
-        <h3>Почему риск {riskOf(token.score).short}</h3>
-        <span>вклад каждого фактора</span>
-      </div>
-      {token.reasons.map((r, i) => (
-        <div className="reason" key={i}>
-          <b
-            className="mono"
-            style={{ color: r.kind === "bad" ? "var(--red)" : r.kind === "good" ? "var(--green)" : "#9aa1af" }}
-          >
-            {r.weight > 0 ? "+" : ""}
-            {r.weight ? r.weight.toFixed(0) : "•"}
-          </b>
-          <span>{r.text}</span>
+      <div className="risk-verdict">
+        <div>
+          <span className="label" style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6 }}>
+            ОЦЕНКА ПОЗИЦИИ
+          </span>
+          <h3>{riskHeadline(token.score, good.length > 0)}</h3>
         </div>
-      ))}
-      {!token.reasons.length && <p className="hint">Нет данных для разбора.</p>}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+          <RiskScale score={token.score} />
+          <span className="step">
+            <b>{riskOf(token.score).step}</b> / 5
+          </span>
+        </div>
+      </div>
+
+      <ProsCons
+        pros={[...(token.ai?.pros ?? []), ...good.map((r) => r.text)]}
+        cons={[...(token.ai?.cons ?? []), ...bad.map((r) => r.text)]}
+      />
+
+      {token.ai && (
+        <p className="hint" style={{ marginTop: -4, marginBottom: 16, fontSize: 10.5 }}>
+          Первые пункты — из разбора ассистента ASCN от{" "}
+          {new Date(token.ai.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+          , остальные — из моей модели.
+        </p>
+      )}
+
+      {!!token.indicators && (
+        <>
+          <div className="section-title" style={{ marginTop: 18 }}>
+            <h3>Индикаторы</h3>
+            <span>дневные свечи {token.indicators.source}</span>
+          </div>
+          <div className="ind-grid">
+            {readIndicators(token.indicators).map((i) => (
+              <div key={i.text} className={`ind-item ${i.tone}`}>
+                {i.text}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {m && (
         <div className="drawer-stats" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginTop: 22 }}>

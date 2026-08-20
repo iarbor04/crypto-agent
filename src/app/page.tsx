@@ -109,12 +109,12 @@ export default function PortfolioPage() {
             </article>
 
             <article className="metric-card">
-              <span>Нужно решение</span>
+              <span>Слабых позиций</span>
               <strong className="mono" style={{ color: needsAction ? "var(--red)" : "var(--green)" }}>
                 {needsAction}
               </strong>
               <small className={needsAction ? "down" : "up"}>
-                {needsAction ? "позиции стоит сократить или закрыть" : "срочных действий нет"}
+                {needsAction ? "позиции слабее рынка или со сломанным трендом" : "все позиции идут с рынком"}
               </small>
             </article>
           </div>
@@ -161,7 +161,7 @@ export default function PortfolioPage() {
                 <span className="col-spark">Цена за 7 дней</span>
                 <span className="col-delta cell-right">За сутки / неделю</span>
                 <span className="col-risk">Риск</span>
-                <span className="col-verdict">Что делать</span>
+                <span className="col-verdict">Состояние</span>
                 <span className="cell-right">Стейкинг</span>
                 <span />
               </div>

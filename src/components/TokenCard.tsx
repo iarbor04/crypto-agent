@@ -4,6 +4,7 @@ import { ArrowUpRight, PiggyBank } from "lucide-react";
 import { VERDICT, amount as fmtAmount, money, moneySmart } from "@/lib/format";
 import type { TokenAnalysis } from "@/lib/types";
 import { Delta, RiskMeter, Pill, RiskDots } from "./bits";
+import { readIndicators } from "@/lib/indicators-view";
 
 const W = 300;
 const H = 44;
@@ -102,6 +103,36 @@ export function TokenCard({ t, onOpen }: { t: TokenAnalysis; onOpen: () => void 
       <div className="token-meta-row">
         <RiskMeter score={t.score} />
       </div>
+
+      {!!t.indicators && (
+        <div className="ind-row">
+          {readIndicators(t.indicators)
+            .filter((i) => i.tone !== "neutral")
+            .slice(0, 2)
+            .map((i) => (
+              <span key={i.text} className={`ind ${i.tone}`}>
+                {i.text}
+              </span>
+            ))}
+        </div>
+      )}
+
+      {!!(t.ai?.pros.length || t.ai?.cons.length) && (
+        <div className="card-proscons">
+          {t.ai.pros[0] && (
+            <p className="p">
+              <i />
+              {t.ai.pros[0]}
+            </p>
+          )}
+          {t.ai.cons[0] && (
+            <p className="c">
+              <i />
+              {t.ai.cons[0]}
+            </p>
+          )}
+        </div>
+      )}
 
       {t.best ? (
         <div className="token-earn">

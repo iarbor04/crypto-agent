@@ -103,6 +103,28 @@ export type MarketContext = {
   stables: Record<string, number>;
 };
 
+export type Indicators = {
+  rsi14: number | null;
+  sma50: number | null;
+  sma200: number | null;
+  aboveSma50: boolean | null;
+  goldenCross: boolean | null;
+  atrPct: number | null;
+  rangeHigh: number;
+  rangeLow: number;
+  rangePosition: number | null;
+  volumeTrendPct: number | null;
+  source: string;
+};
+
+/** Разбор ассистента, сохранённый по токену: живёт между прогонами и виден в карточке. */
+export type AiInsight = {
+  at: string;
+  pros: string[];
+  cons: string[];
+  content: string;
+};
+
 export type Opportunity = {
   id: string;
   kind: "staking" | "liquid-staking" | "lending" | "lp" | "farm" | "cex" | "other";
@@ -134,6 +156,8 @@ export type TokenAnalysis = {
   market: MarketData | null;
   meta: CoinMeta | null;
   liquidity: Liquidity | null;
+  indicators: Indicators | null;
+  ai: AiInsight | null;
   /** ставка фондирования перпа за 8 часов, если он есть */
   funding: number | null;
   hacks: { date: string; amountUsd: number; technique: string }[];
