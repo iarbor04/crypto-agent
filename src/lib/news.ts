@@ -26,14 +26,16 @@ const NEGATIVE: [RegExp, number, string][] = [
   [/\b(hack|hacked|exploit|exploited|drain(ed)?|stolen)\b/i, 3, "взлом"],
   [/\b(rug ?pull|scam|fraud|ponzi)\b/i, 3, "скам"],
   [/\b(shut(ting)? down|shuts down|wind(ing)? down|ceases? operations|bankrupt|insolvent|liquidation)\b/i, 3, "проект закрывается"],
-  [/\b(delist(ed|ing)?|removed from)\b/i, 3, "делистинг"],
+  [/\b(delist(ed|ing)?)\b|removed from (binance|coinbase|kraken|okx|bybit|upbit|the exchange)/i, 3, "делистинг"],
   [/\b(sec (sues|charges|probe)|lawsuit|sued|indicted|investigation|subpoena)\b/i, 2, "юридические риски"],
   [/\b(unlock|vesting|cliff|token unlock)\b/i, 2, "разлок токенов"],
   [/\b(exit scam|team sold|insider(s)? sold|dump(ed|ing)?)\b/i, 2, "продажи команды"],
   [/\b(depeg|depegged|bad debt|insolvency)\b/i, 3, "депег/плохой долг"],
   [/\b(plunge|plummet|crash|tank(s|ed)?|slump|sell-?off|bleed)\b/i, 1, "падение"],
   [/\b(layoff|lay ?offs|resign(ed|s|ation)|steps? down|departure)\b/i, 1, "уход команды"],
-  [/\b(halt(ed|s)?|paused withdrawals|freeze)\b/i, 2, "остановка выводов"],
+  // «could halt ETH» в заголовке про цену — это не остановка выводов,
+  // поэтому требуем рядом указание, что именно остановили
+  [/(halt(s|ed)?|pause[sd]?|suspend(s|ed)?|freeze[sd]?)\s+(all\s+)?(trading|withdrawal|deposit|transfer|operation|redemption)|(trading|withdrawals?|deposits?)\s+(are\s+|is\s+|were\s+)?(halted|paused|frozen|suspended)/i, 3, "остановка выводов"],
 ];
 
 const POSITIVE: [RegExp, number, string][] = [

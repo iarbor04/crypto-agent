@@ -4,3 +4,5 @@ node_modules
 .next
 tsconfig.tsbuildinfo
 *.log
+__pycache__/
+*.pyc

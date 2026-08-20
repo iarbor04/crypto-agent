@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ASCN.AI Portfolio — стейкинг, риски и агент</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-tile"><img src="/emblem.svg" alt="ASCN.AI" width="26" height="26" /></span>
+          <span>ASCN.AI Portfolio</span>
+        </div>
+        <nav class="main-nav">
+          <p>РАБОЧЕЕ ПРОСТРАНСТВО</p>
+          <a href="#/" data-nav="/" class="active">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
+            </svg>
+            Портфель
+          </a>
+          <a href="#/risks" data-nav="/risks">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M20 13c0 5-3.5 7.5-7.7 8.9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1 1 0 0 1 1.3 0C14.3 3.8 16.8 5 18.8 5a1 1 0 0 1 1 1z" /><path d="M12 8v4M12 16h.01" />
+            </svg>
+            Рейтинг риска
+          </a>
+          <a href="#/agent" data-nav="/agent">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2M20 14h2M15 13v2M9 13v2" />
+            </svg>
+            Агент
+          </a>
+        </nav>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div class="breadcrumbs">
+            <span>Мой портфель</span><i>/</i><strong id="crumb">Портфель</strong>
+          </div>
+        </header>
+        <div class="content" id="view"></div>
+      </section>
+    </main>
+
+    <div id="drawer-root"></div>
+    <div id="modal-root"></div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
