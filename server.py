@@ -403,8 +403,22 @@ class Handler(BaseHTTPRequestHandler):
         query = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
         if not self._authorized():
             if parsed.path == "/api/health":
-                # проверка платформы должна проходить, но конфигурацию не показываем
-                self._send_json({"ok": True, "authRequired": True})
+                # С самой машины отдаём полную картину: кто дошёл до localhost,
+                # тот и так читает .env.local, а диагностика нужна именно ему.
+                # Снаружи — только факт жизни, чтобы проверки платформы проходили,
+                # а конфигурация не светилась.
+                # Заголовки X-Forwarded-* означают, что запрос пришёл через
+                # прокси: на хостинге он может стучаться и с петли, поэтому
+                # такой запрос считаем внешним, а сам заголовок — подделываемым.
+                proxied = bool(self.headers.get("X-Forwarded-For") or self.headers.get("X-Forwarded-Proto"))
+                if not proxied and self.client_address[0] in ("127.0.0.1", "::1"):
+                    self._send_json(api_health({}, None))
+                else:
+                    self._send_json({
+                        "ok": True,
+                        "authRequired": True,
+                        "detail": "полный ответ — после входа или с localhost",
+                    })
                 return
             if parsed.path == "/api/auth":
                 self._send_json({"required": True, "authorized": False})
