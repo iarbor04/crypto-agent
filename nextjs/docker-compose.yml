@@ -4,10 +4,10 @@ services:
     ports:
       - "${HOST_PORT:-3500}:3500"
     env_file:
-      - .env.local
+      - ../.env.local
     volumes:
       # портфель, настройки и кэши переживают пересборку образа
-      - ./data:/app/data
+      - ../data:/app/data
     restart: unless-stopped
 
   # Разбор портфеля дважды в день. Запускать вместе с профилем: docker compose --profile cron up -d
@@ -15,11 +15,11 @@ services:
     build: .
     profiles: ["cron"]
     env_file:
-      - .env.local
+      - ../.env.local
     environment:
       APP_URL: http://crypto-agent:3500
     volumes:
-      - ./data:/app/data
+      - ../data:/app/data
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
