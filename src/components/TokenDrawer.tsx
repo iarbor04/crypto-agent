@@ -550,7 +550,24 @@ function ProfileTab({ token }: { token: TokenAnalysis }) {
 }
 
 function NewsTab({ token }: { token: TokenAnalysis }) {
-  if (!token.news.length) return <p className="hint">Свежих новостей по токену в лентах нет.</p>;
+  if (!token.news.length) {
+    // Общие крипто-ленты пишут в основном про топ-10. По остальным токенам
+    // новости приносит ассистент — показываем его разбор, а не пустой экран.
+    const aiNews = token.ai?.content.match(/(?:\*\*)?3\)?\s*САНТИМЕНТ[\s\S]*?(?=(?:\*\*)?4\)|$)/i)?.[0];
+    return (
+      <>
+        <p className="hint" style={{ marginBottom: aiNews ? 16 : 0 }}>
+          В бесплатных новостных лентах свежих упоминаний {token.symbol} нет — они пишут в основном про топ-10.
+          {aiNews ? " Ниже — новостной раздел из разбора ассистента." : " Запустите разбор ИИ на странице «Агент», он ищет новости по конкретному токену."}
+        </p>
+        {aiNews && (
+          <pre className="run-summary" style={{ borderTop: 0, borderRadius: 12, padding: "16px 18px" }}>
+            {aiNews.replace(/\*\*/g, "").trim()}
+          </pre>
+        )}
+      </>
+    );
+  }
   return (
     <>
       {token.news.map((n, i) => {

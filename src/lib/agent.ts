@@ -1,5 +1,5 @@
 import { analyzePortfolio } from "./analyze";
-import { askAscn, buildTokenPrompt, hasAscnKey, markdownToTelegram, parseProsCons } from "./ascn";
+import { askAscn, buildTokenPrompt, getAscnCredentials, markdownToTelegram, parseProsCons } from "./ascn";
 import { riskOf } from "./format";
 import { readJson, writeJson } from "./store";
 import { escapeHtml, getSettings, sendTelegram } from "./telegram";
@@ -228,7 +228,8 @@ export async function runAgent(trigger: "cron" | "manual"): Promise<AgentRun> {
   const shouldSend = important.length > 0 || settings.sendEmptyDigest || trigger === "manual";
 
   // ИИ-разбор: только по важным токенам и только если есть ключ
-  const aiEnabled = settings.ai.enabled && hasAscnKey() && shouldSend;
+  const creds = await getAscnCredentials();
+  const aiEnabled = settings.ai.enabled && Boolean(creds.apiKey) && shouldSend;
   const candidates = aiEnabled ? pickForAi(analysis, unique, settings.ai.maxTokensPerRun) : [];
   const marketNote = analysis.context.fearGreed
     ? `индекс страха и жадности ${analysis.context.fearGreed.value}/100 (${analysis.context.fearGreed.label})`
@@ -239,7 +240,7 @@ export async function runAgent(trigger: "cron" | "manual"): Promise<AgentRun> {
   let aiDone = 0;
   const aiResults = await Promise.all(
     candidates.map(async (t) => {
-      const res = await askAscn(buildTokenPrompt(t, marketNote), t.symbol);
+      const res = await askAscn(buildTokenPrompt(t, marketNote), t.symbol, creds);
       aiDone += 1;
       await updateJob({ aiDone });
       return res;

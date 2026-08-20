@@ -18,7 +18,15 @@ export async function GET() {
     botTokenMask: mask(s.botToken),
     hasBotToken: Boolean(s.botToken),
     schedule: s.schedule,
-    ai: s.ai,
+    ai: {
+      enabled: s.ai.enabled,
+      maxTokensPerRun: s.ai.maxTokensPerRun,
+      model: s.ai.model,
+      // сам ключ наружу не отдаём — только маску и факт наличия
+      apiKeyMask: mask(s.ai.apiKey),
+      hasApiKey: Boolean(s.ai.apiKey),
+      fromEnv: Boolean(process.env.ASCN_API_KEY) && !s.ai.apiKey,
+    },
     next: s.schedule.enabled ? nextRun(s.schedule.times, s.schedule.timezone) : null,
     lastScheduledRun: state.lastRunAt,
   });
@@ -39,6 +47,7 @@ export async function POST(req: Request) {
     hasBotToken: Boolean(s.botToken),
     sendEmptyDigest: s.sendEmptyDigest,
     schedule: s.schedule,
+    ai: { enabled: s.ai.enabled, maxTokensPerRun: s.ai.maxTokensPerRun, model: s.ai.model, hasApiKey: Boolean(s.ai.apiKey) },
     next: s.schedule.enabled ? nextRun(s.schedule.times, s.schedule.timezone) : null,
   });
 }

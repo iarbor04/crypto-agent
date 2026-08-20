@@ -1,7 +1,7 @@
+import { getSettings } from "./telegram";
 import type { TokenAnalysis } from "./types";
 
 const BASE = process.env.ASCN_API_URL || "https://b2b.api.ascn.ai";
-const MODEL = process.env.ASCN_MODEL || "ascn_v1.2";
 
 /** Разбор одного токена идёт 3-6 минут, поэтому ждём долго и запускаем параллельно. */
 const TIMEOUT_MS = Number(process.env.ASCN_TIMEOUT_MS || 8 * 60_000);
@@ -15,8 +15,14 @@ type ApiResponse = {
   error?: string | null;
 };
 
-export function hasAscnKey(): boolean {
-  return Boolean(process.env.ASCN_API_KEY);
+/** Ключ живёт в настройках дашборда, а переменная окружения — запасной вариант. */
+export async function getAscnCredentials(): Promise<{ apiKey: string; model: string }> {
+  const { ai } = await getSettings();
+  return { apiKey: ai.apiKey, model: ai.model };
+}
+
+export async function hasAscnKey(): Promise<boolean> {
+  return Boolean((await getAscnCredentials()).apiKey);
 }
 
 const money = (n: number) => `$${Math.round(n).toLocaleString("ru-RU")}`;
@@ -105,12 +111,24 @@ export function buildTokenPrompt(t: TokenAnalysis, marketNote: string): string {
 }
 
 /** Один вопрос ассистенту. auto_hil, чтобы он не останавливался на уточнениях. */
-export async function askAscn(message: string, symbol = ""): Promise<AscnResult> {
-  const key = process.env.ASCN_API_KEY;
+export async function askAscn(message: string, symbol = "", creds?: { apiKey: string; model: string }): Promise<AscnResult> {
+  const { apiKey: key, model } = creds ?? (await getAscnCredentials());
   const started = Date.now();
   const seconds = () => Math.round((Date.now() - started) / 1000);
 
-  if (!key) return { symbol, content: null, chatId: null, error: "ASCN_API_KEY не задан", seconds: 0 };
+  if (!key) {
+    return { symbol, content: null, chatId: null, error: "Ключ ASCN не задан — вставьте его на странице «Агент»", seconds: 0 };
+  }
+  // ключ уходит в HTTP-заголовок: с кириллицей или пробелами fetch падает невнятной ошибкой
+  if (!/^[\x21-\x7e]+$/.test(key)) {
+    return {
+      symbol,
+      content: null,
+      chatId: null,
+      error: "Ключ содержит недопустимые символы — ожидаются латинские буквы и цифры без пробелов",
+      seconds: 0,
+    };
+  }
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -119,7 +137,7 @@ export async function askAscn(message: string, symbol = ""): Promise<AscnResult>
       method: "POST",
       signal: ctrl.signal,
       headers: { accept: "application/json", "content-type": "application/json", "X-API-Key": key },
-      body: JSON.stringify({ message, model: MODEL, auto_hil: true }),
+      body: JSON.stringify({ message, model, auto_hil: true }),
     });
 
     if (res.status === 429) return { symbol, content: null, chatId: null, error: "лимит запросов ASCN (429)", seconds: seconds() };

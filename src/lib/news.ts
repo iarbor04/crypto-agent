@@ -2,11 +2,23 @@ import { fetchText } from "./http";
 import { cached } from "./store";
 import type { NewsItem } from "./types";
 
+// Публичные RSS: чем больше лент, тем выше шанс поймать новость по конкретному
+// токену, а не только по биткоину. Все проверены и отдают от 10 до 96 записей.
 const FEEDS = [
   { url: "https://cointelegraph.com/rss", source: "Cointelegraph" },
   { url: "https://www.coindesk.com/arc/outboundfeeds/rss/", source: "CoinDesk" },
   { url: "https://decrypt.co/feed", source: "Decrypt" },
   { url: "https://cryptoslate.com/feed/", source: "CryptoSlate" },
+  { url: "https://www.theblock.co/rss.xml", source: "The Block" },
+  { url: "https://u.today/rss", source: "U.Today" },
+  { url: "https://ambcrypto.com/feed/", source: "AMBCrypto" },
+  { url: "https://beincrypto.com/feed/", source: "BeInCrypto" },
+  { url: "https://www.newsbtc.com/feed/", source: "NewsBTC" },
+  { url: "https://cryptobriefing.com/feed/", source: "Crypto Briefing" },
+  { url: "https://blockworks.co/feed", source: "Blockworks" },
+  { url: "https://www.dlnews.com/arc/outboundfeeds/rss/", source: "DL News" },
+  { url: "https://protos.com/feed/", source: "Protos" },
+  { url: "https://bitcoinmagazine.com/feed", source: "Bitcoin Magazine" },
 ];
 
 /** Слова, из которых собирается тон новости. Вес = насколько это меняет решение. */
@@ -43,7 +55,7 @@ export function scoreHeadline(title: string): { tone: number; tags: string[] } {
   return { tone: Math.max(-3, Math.min(3, tone)), tags: [...new Set(tags)] };
 }
 
-type RawNews = { title: string; url: string; source: string; publishedAt: string | null };
+type RawNews = { title: string; url: string; source: string; publishedAt: string | null; body: string };
 
 function decode(s: string): string {
   return s
@@ -61,7 +73,7 @@ function decode(s: string): string {
 
 function parseRss(xml: string, source: string): RawNews[] {
   const items = xml.match(/<item[\s>][\s\S]*?<\/item>/g) ?? [];
-  return items.slice(0, 60).map((item) => {
+  return items.slice(0, 80).map((item) => {
     const pick = (tag: string) => {
       const m = item.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i"));
       return m ? decode(m[1]) : "";
@@ -72,6 +84,8 @@ function parseRss(xml: string, source: string): RawNews[] {
       url: pick("link") || pick("guid"),
       source,
       publishedAt: date ? new Date(date).toISOString() : null,
+      // анонс тоже ищем: токен часто упомянут в тексте, а в заголовке — «альткоины растут»
+      body: (pick("description") || pick("content:encoded") || "").slice(0, 400),
     };
   }).filter((i) => i.title);
 }
@@ -92,7 +106,9 @@ async function getFeed(): Promise<RawNews[]> {
   });
 }
 
-function mentions(title: string, symbol: string, name?: string): boolean {
+function mentions(text: string, symbol: string, name?: string): boolean {
+  const title = text;
+  // проверяем и заголовок, и анонс: токен часто назван только в тексте
   if (name && name.length > 3 && new RegExp(`\\b${escape(name)}\\b`, "i").test(title)) return true;
   // тикер ловим только в «сильной» форме: APE, $APE, (APE) — иначе слишком много ложных срабатываний
   if (symbol.length >= 3 && new RegExp(`(^|[\\s(\\[$"'])\\$?${escape(symbol)}($|[\\s)\\],.:;!?"'])`).test(title)) {
@@ -108,7 +124,7 @@ function escape(s: string): string {
 /** Новости по токену: фильтр общей RSS-ленты по имени и тикеру. */
 export async function getNews(symbol: string, name?: string, limit = 6): Promise<NewsItem[]> {
   const feed = await getFeed();
-  const relevant = feed.filter((n) => mentions(n.title, symbol, name));
+  const relevant = feed.filter((n) => mentions(n.title, symbol, name) || mentions(n.body, symbol, name));
   const seen = new Set<string>();
   return relevant
     .filter((n) => {

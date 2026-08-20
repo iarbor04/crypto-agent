@@ -23,14 +23,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <span>ASCN.AI Portfolio</span>
         </div>
 
-        <div className="workspace-switcher">
-          <div className="bot-avatar">P</div>
-          <div>
-            <strong>Мой портфель</strong>
-            <span>агент следит 2 раза в день</span>
-          </div>
-        </div>
-
         <nav className="main-nav">
           <p>РАБОЧЕЕ ПРОСТРАНСТВО</p>
           {NAV.map((item) => {
@@ -44,11 +36,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="sidebar-footer">
-          Данные: CoinGecko, DeFiLlama, новостные RSS.
-          <br />
-          Не инвестиционная рекомендация.
-        </div>
       </aside>
 
       <section className="workspace">

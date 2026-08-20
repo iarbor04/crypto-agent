@@ -18,7 +18,14 @@ type SettingsView = {
 };
 type Detected = { bot: { username: string; name: string }; chats: { id: string; title: string; type: string }[] };
 type Schedule = { enabled: boolean; times: string[]; timezone: string; catchUp: boolean };
-type AiSettings = { enabled: boolean; maxTokensPerRun: number };
+type AiSettings = {
+  enabled: boolean;
+  maxTokensPerRun: number;
+  model: string;
+  apiKeyMask?: string;
+  hasApiKey?: boolean;
+  fromEnv?: boolean;
+};
 type Job = {
   id: string;
   status: "running" | "done" | "error";
@@ -59,6 +66,7 @@ export default function AgentPage() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [next, setNext] = useState<NextRun>(null);
   const [ai, setAi] = useState<AiSettings | null>(null);
+  const [ascnKey, setAscnKey] = useState("");
   const [job, setJob] = useState<Job>(null);
 
   const loadAll = useCallback(async () => {
@@ -195,15 +203,51 @@ export default function AgentPage() {
     }
   }
 
-  async function saveAi(patch: Partial<AiSettings>) {
+  async function saveAi(patch: Partial<AiSettings> & { apiKey?: string }) {
     if (!ai) return;
     const nextAi = { ...ai, ...patch };
     setAi(nextAi);
     await fetch("/api/settings", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ai: nextAi }),
+      body: JSON.stringify({ ai: { ...patch, enabled: nextAi.enabled, maxTokensPerRun: nextAi.maxTokensPerRun, model: nextAi.model } }),
     }).catch(() => setMsg({ text: "Не удалось сохранить настройки ИИ", ok: false }));
+  }
+
+  async function saveAscnKey() {
+    if (!ascnKey.trim()) return;
+    setBusy("ascn-save");
+    setMsg(null);
+    try {
+      await saveAi({ apiKey: ascnKey.trim() });
+      setAscnKey("");
+      await loadAll();
+      setMsg({ text: "Ключ сохранён. Проверьте его кнопкой рядом — ответ занимает секунд двадцать.", ok: true });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function checkAscn() {
+    setBusy("ascn-check");
+    setMsg(null);
+    try {
+      const res = await fetch("/api/ascn/check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(ascnKey.trim() ? { apiKey: ascnKey.trim() } : {}),
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: string; seconds?: number; model?: string };
+      setMsg(
+        json.ok
+          ? { text: `Ключ работает: ассистент ${json.model} ответил за ${json.seconds} с`, ok: true }
+          : { text: `Ключ не подошёл: ${json.error}`, ok: false },
+      );
+    } catch (e) {
+      setMsg({ text: e instanceof Error ? e.message : String(e), ok: false });
+    } finally {
+      setBusy(null);
+    }
   }
 
   const ready = Boolean(settings?.hasBotToken && settings?.chatId);
@@ -444,17 +488,49 @@ export default function AgentPage() {
               отдельным сообщением
             </p>
           </div>
-          <label className="switch" title="Включить ИИ-разбор">
-            <input
-              type="checkbox"
-              checked={Boolean(ai?.enabled)}
-              onChange={(e) => saveAi({ enabled: e.target.checked })}
-              disabled={!ai}
-            />
-            <span />
-          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span className={`pill ${ai?.hasApiKey ? "pill-green" : "pill-amber"}`}>
+              <i className="status-dot" style={{ background: ai?.hasApiKey ? "var(--green)" : "var(--amber)" }} />
+              {ai?.hasApiKey ? (ai.fromEnv ? "ключ из .env.local" : "ключ задан") : "ключа нет"}
+            </span>
+            <label className="switch" title="Включить ИИ-разбор">
+              <input
+                type="checkbox"
+                checked={Boolean(ai?.enabled)}
+                onChange={(e) => saveAi({ enabled: e.target.checked })}
+                disabled={!ai}
+              />
+              <span />
+            </label>
+          </div>
         </div>
         <div className="card-body">
+          <label className="field">
+            API-КЛЮЧ ASCN — b2b.ascn.ai → API keys
+            <input
+              value={ascnKey}
+              placeholder={ai?.hasApiKey ? ai.apiKeyMask || "ключ сохранён" : "28kR8f…"}
+              onChange={(e) => setAscnKey(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </label>
+          <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+            <button className="primary-button" onClick={saveAscnKey} disabled={!ascnKey.trim() || busy === "ascn-save"}>
+              {busy === "ascn-save" ? "Сохраняю…" : "Сохранить ключ"}
+            </button>
+            <button className="ghost-button" onClick={checkAscn} disabled={busy === "ascn-check" || (!ai?.hasApiKey && !ascnKey.trim())}>
+              {busy === "ascn-check" ? "Спрашиваю ассистента…" : "Проверить ключ"}
+            </button>
+            <input
+              value={ai?.model ?? ""}
+              onChange={(e) => saveAi({ model: e.target.value })}
+              placeholder="ascn_v1.2"
+              title="Модель ассистента"
+              style={{ width: 130, height: 42, borderRadius: 10, border: "1px solid var(--line)", padding: "0 11px" }}
+            />
+          </div>
+
           <span className="label" style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6 }}>
             СКОЛЬКО ТОКЕНОВ РАЗБИРАТЬ ЗА ПРОГОН
           </span>
@@ -470,7 +546,8 @@ export default function AgentPage() {
           </div>
           <p className="hint" style={{ marginTop: 14 }}>
             Один токен — это 3–6 минут ожидания ответа, запросы уходят параллельно. Если важных изменений нет, ИИ не
-            вызывается вообще и квота не тратится. Ключ берётся из <code>ASCN_API_KEY</code> в <code>.env.local</code>.
+            вызывается вообще и квота не тратится. Ключ хранится в <code>data/settings.json</code> рядом с дашбордом и
+            наружу не отдаётся; если поле пустое, берётся <code>ASCN_API_KEY</code> из <code>.env.local</code>.
           </p>
         </div>
       </div>

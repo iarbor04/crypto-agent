@@ -13,6 +13,9 @@ export type AiSettings = {
   enabled: boolean;
   /** сколько токенов отдавать ассистенту за один прогон: каждый — 3-6 минут */
   maxTokensPerRun: number;
+  /** ключ ASCN Crypto API: можно вписать в дашборде, можно в .env.local */
+  apiKey: string;
+  model: string;
 };
 
 export type Settings = {
@@ -63,6 +66,9 @@ export async function getSettings(): Promise<Settings> {
     ai: {
       enabled: saved.ai?.enabled ?? true,
       maxTokensPerRun: Math.max(0, Math.min(Number(saved.ai?.maxTokensPerRun ?? 3), 8)),
+      // ключ из дашборда важнее переменной окружения: его правит пользователь
+      apiKey: saved.ai?.apiKey || process.env.ASCN_API_KEY || "",
+      model: saved.ai?.model || process.env.ASCN_MODEL || "ascn_v1.2",
     },
   };
 }
@@ -82,6 +88,8 @@ export async function saveSettings(patch: Partial<Settings>): Promise<Settings> 
     ai: {
       enabled: patch.ai?.enabled ?? current.ai?.enabled ?? true,
       maxTokensPerRun: Math.max(0, Math.min(Number(patch.ai?.maxTokensPerRun ?? current.ai?.maxTokensPerRun ?? 3), 8)),
+      apiKey: typeof patch.ai?.apiKey === "string" ? patch.ai.apiKey.trim() : current.ai?.apiKey ?? "",
+      model: (typeof patch.ai?.model === "string" && patch.ai.model.trim()) || current.ai?.model || "ascn_v1.2",
     },
   }));
   return getSettings();
