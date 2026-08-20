@@ -37,7 +37,7 @@ from lib.agent import (  # noqa: E402
     send_telegram,
 )
 from lib.analyze import analyze_portfolio  # noqa: E402
-from lib.scheduler import next_run, start_scheduler  # noqa: E402
+from lib.scheduler import next_run, start_scheduler, tzdata_available, zone_note  # noqa: E402
 from lib.settings import (  # noqa: E402
     get_portfolio,
     get_settings,
@@ -121,6 +121,8 @@ def api_health(_: Dict[str, str], __: Any) -> Any:
         "coingeckoKey": bool(os.environ.get("COINGECKO_API_KEY")),
         "agentSecretSet": bool(os.environ.get("AGENT_SECRET")),
         "scheduler": settings["schedule"],
+        "tzdata": tzdata_available(),
+        "timezoneNote": zone_note(settings["schedule"]["timezone"]),
         "sources": sources_state,
     }
 
