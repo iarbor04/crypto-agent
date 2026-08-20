@@ -127,13 +127,15 @@ export function scoreToken(input: {
     reasons.push({ text: `Капитализация всего $${fmtShort(market.marketCap)} — микрокап, риск манипуляций`, weight: -8, kind: "bad" });
   }
 
-  // 4. Новости (20)
-  const tones = news.map((n) => n.tone);
+  // 4. Новости (18). Считаем только свежие: поиск поднимает статьи трёхлетней
+  // давности, и взлом 2022 года не должен обрушать оценку сегодня.
+  const fresh = news.filter((n) => n.ageDays != null && n.ageDays <= 14);
+  const tones = fresh.map((n) => n.tone);
   const worstTone = tones.length ? Math.min(...tones) : 0;
   const bestTone = tones.length ? Math.max(...tones) : 0;
   const newsTone = tones.length ? tones.reduce((a, b) => a + b, 0) / tones.length : 0;
   const newsScore = ramp(worstTone * 0.6 + bestTone * 0.4, -3, 2.5, 18);
-  const criticalNews = news.filter((n) => n.tags.some((t) => CRITICAL_TAGS.includes(t)));
+  const criticalNews = fresh.filter((n) => n.tags.some((t) => CRITICAL_TAGS.includes(t)));
   if (criticalNews.length) {
     reasons.push({
       text: `Критичный новостной фон (${criticalNews[0].tags.join(", ")}): «${criticalNews[0].title.slice(0, 110)}»`,
@@ -141,9 +143,9 @@ export function scoreToken(input: {
       kind: "bad",
     });
   } else if (worstTone <= -2) {
-    reasons.push({ text: `Негативные новости: «${news.find((n) => n.tone === worstTone)?.title.slice(0, 110)}»`, weight: -10, kind: "bad" });
+    reasons.push({ text: `Негативные новости: «${fresh.find((n) => n.tone === worstTone)?.title.slice(0, 110)}»`, weight: -10, kind: "bad" });
   } else if (bestTone >= 2) {
-    reasons.push({ text: `Позитивные новости: «${news.find((n) => n.tone === bestTone)?.title.slice(0, 110)}»`, weight: 8, kind: "good" });
+    reasons.push({ text: `Позитивные новости: «${fresh.find((n) => n.tone === bestTone)?.title.slice(0, 110)}»`, weight: 8, kind: "good" });
   }
 
   // 5. Структурный тренд (15) — 200 дней и год, тоже относительно рынка.

@@ -33,6 +33,8 @@ export type MarketData = {
 };
 
 export type NewsItem = {
+  /** сколько дней назад вышла; null — дата неизвестна */
+  ageDays: number | null;
   title: string;
   url: string;
   source: string;

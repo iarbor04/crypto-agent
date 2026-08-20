@@ -19,7 +19,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <Image className="brand-emblem" src="/emblem.svg" width={36} height={36} alt="ASCN.AI" priority />
+          <span className="brand-tile">
+            <Image className="brand-emblem" src="/emblem.svg" width={26} height={26} alt="ASCN.AI" priority />
+          </span>
           <span>ASCN.AI Portfolio</span>
         </div>
 

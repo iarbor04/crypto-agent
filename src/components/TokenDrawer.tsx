@@ -589,7 +589,8 @@ function NewsTab({ token }: { token: TokenAnalysis }) {
               <strong>{n.title}</strong>
               <small>
                 {n.source}
-                {n.publishedAt ? ` · ${new Date(n.publishedAt).toLocaleDateString("ru-RU")}` : ""}
+                {n.publishedAt ? ` · ${new Date(n.publishedAt).toLocaleDateString("ru-RU")}` : " · дата неизвестна"}
+                {n.ageDays != null && n.ageDays > 14 ? " · старая, в оценку не идёт" : ""}
                 {n.tags.length ? ` · ${n.tags.join(", ")}` : ""}
               </small>
             </div>

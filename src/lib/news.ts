@@ -90,6 +90,52 @@ function parseRss(xml: string, source: string): RawNews[] {
   }).filter((i) => i.title);
 }
 
+/**
+ * Поиск новостей по конкретному токену через RSS поиска Bing.
+ *
+ * Общие крипто-ленты пишут в основном про топ-10: по APE и ARB в 326 материалах
+ * за сутки не было ни одного упоминания. Поисковая выдача это закрывает.
+ * Google News сюда не берём: его фид разрешён только для персональных
+ * читалок, и выдача забита конвертерами валют и страницами с ценами.
+ */
+const JUNK = /конвертировать|convert |price prediction|цена, график|прогноз цены|курс [a-z]{2,5} к|how to buy|где купить|калькулятор/i;
+
+async function searchNews(symbol: string, name?: string): Promise<RawNews[]> {
+  const query = `${name && name.length > 3 ? name : symbol} crypto`;
+  const url = (fresh: boolean) =>
+    `https://www.bing.com/news/search?q=${encodeURIComponent(query)}&format=RSS${
+      // qft=interval="8" — выдача за последний месяц. Без фильтра поиск поднимает
+      // статьи трёхлетней давности, которые для решения бесполезны.
+      fresh ? '&qft=interval%3d%228%22' : ""
+    }`;
+  // Проверку упоминания делаем здесь же, до решения «добирать или нет»:
+  // иначе выдача из двух нерелевантных статей считается достаточной.
+  const clean = (xml: string) =>
+    parseRss(xml, "Поиск")
+      .filter(
+        (n) =>
+          n.title &&
+          !JUNK.test(n.title) &&
+          !JUNK.test(n.body) &&
+          (mentions(n.title, symbol, name) || mentions(n.body, symbol, name)),
+      )
+      .slice(0, 12);
+
+  try {
+    const recent = clean(
+      await cached<string>(`search-fresh-${symbol.toLowerCase()}.json`, 60 * 60_000, () => fetchText(url(true), 15_000)),
+    );
+    if (recent.length >= 2) return recent;
+    // свежего мало — добираем общей выдачей, старое всё равно не пойдёт в оценку
+    const all = clean(
+      await cached<string>(`search-${symbol.toLowerCase()}.json`, 6 * 60 * 60_000, () => fetchText(url(false), 15_000)),
+    );
+    return [...recent, ...all];
+  } catch {
+    return [];
+  }
+}
+
 /** Общая лента крипто-новостей (публичные RSS). Кэш 20 минут. */
 async function getFeed(): Promise<RawNews[]> {
   return cached<RawNews[]>("news-feed.json", 20 * 60_000, async () => {
@@ -123,8 +169,9 @@ function escape(s: string): string {
 
 /** Новости по токену: фильтр общей RSS-ленты по имени и тикеру. */
 export async function getNews(symbol: string, name?: string, limit = 6): Promise<NewsItem[]> {
-  const feed = await getFeed();
-  const relevant = feed.filter((n) => mentions(n.title, symbol, name) || mentions(n.body, symbol, name));
+  const [feed, fromSearch] = await Promise.all([getFeed(), searchNews(symbol, name)]);
+  const fromFeeds = feed.filter((n) => mentions(n.title, symbol, name) || mentions(n.body, symbol, name));
+  const relevant = [...fromFeeds, ...fromSearch];
   const seen = new Set<string>();
   return relevant
     .filter((n) => {
@@ -133,12 +180,22 @@ export async function getNews(symbol: string, name?: string, limit = 6): Promise
       seen.add(k);
       return true;
     })
-    .map((n) => ({ ...n, ...scoreHeadline(n.title) }))
+    .map((n) => ({
+      ...n,
+      ...scoreHeadline(n.title),
+      ageDays: n.publishedAt ? Math.floor((Date.now() - new Date(n.publishedAt).getTime()) / 86_400_000) : null,
+    }))
     .sort((a, b) => {
-      // сначала то, что меняет решение, потом свежее
-      const impact = Math.abs(b.tone) - Math.abs(a.tone);
-      if (impact !== 0) return impact;
-      return (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "");
+      // Свежее вперёд: поисковая выдача любит поднимать статьи трёхлетней давности,
+      // а решение принимается по сегодняшним новостям.
+      const freshA = a.ageDays != null && a.ageDays <= 14 ? 1 : 0;
+      const freshB = b.ageDays != null && b.ageDays <= 14 ? 1 : 0;
+      if (freshA !== freshB) return freshB - freshA;
+      // внутри своей группы — сначала новее: показывать взлом 2022 года первым,
+      // когда свежих новостей нет, значит вводить в заблуждение
+      const byDate = (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "");
+      if (byDate !== 0) return byDate;
+      return Math.abs(b.tone) - Math.abs(a.tone);
     })
     .slice(0, limit);
 }
