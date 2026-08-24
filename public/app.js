@@ -139,28 +139,71 @@ async function loadAnalysis(force, sync) {
   render();
 }
 
-// Разбор ASCN идёт минуту-две на токен, поэтому гоняем все параллельно
-// и показываем, сколько уже готово.
-let aiRunAll = { busy: false, done: 0, total: 0 };
+// Разбор ASCN идёт минуты на токен. Прогресс должен быть виден: счётчик
+// готовых двигается редко, поэтому показываем ещё и тикающее время
+// и состояние каждого токена по отдельности.
+let aiRunAll = { busy: false, startedAt: 0, states: {} };
+let aiTick = null;
+
+function aiRunProgress() {
+  if (!aiRunAll.busy && !Object.keys(aiRunAll.states).length) return "";
+  const entries = Object.keys(aiRunAll.states);
+  const done = entries.filter((k) => aiRunAll.states[k] !== "run").length;
+  const total = entries.length;
+  const secs = Math.round((Date.now() - aiRunAll.startedAt) / 1000);
+  const time = secs < 60 ? secs + " с" : Math.floor(secs / 60) + " мин " + (secs % 60) + " с";
+  const chips = entries
+    .map(function (sym) {
+      const st = aiRunAll.states[sym];
+      const mark = st === "done" ? "✓" : st === "fail" ? "✕" : "";
+      return '<span class="ai-chip ' + st + '">' + esc(sym) + (mark ? " " + mark : "") + "</span>";
+    })
+    .join("");
+  return (
+    '<div class="ai-progress' + (aiRunAll.busy ? "" : " finished") + '">' +
+    '<div class="ai-progress-head"><b>' +
+    (aiRunAll.busy ? "Ассистент ASCN разбирает портфель" : "Разбор закончен") +
+    "</b><span>" + done + " из " + total + " · идёт " + time + "</span></div>" +
+    // пока не готов ни один токен, полоса пустая и выглядит мёртвой —
+    // тогда показываем бегущую вместо нулевой
+    (done === 0 && aiRunAll.busy
+      ? '<div class="ai-progress-bar running"><i></i></div>'
+      : '<div class="ai-progress-bar"><i style="width:' + Math.round((done / Math.max(total, 1)) * 100) + '%"></i></div>') +
+    '<div class="ai-chips">' + chips + "</div>" +
+    '<p class="hint">Один токен — две-четыре минуты, запросы идут параллельно. Страницу можно не держать открытой: результат сохраняется.</p>' +
+    "</div>"
+  );
+}
 
 async function runAllAnalysis() {
   if (aiRunAll.busy) return;
-  const tokens = ((state.analysis && state.analysis.tokens) || []).map((t) => t.symbol);
+  const tokens = ((state.analysis && state.analysis.tokens) || []).map(function (t) { return t.symbol; });
   if (!tokens.length) return;
-  aiRunAll = { busy: true, done: 0, total: tokens.length };
+  const states = {};
+  tokens.forEach(function (sym) { states[sym] = "run"; });
+  aiRunAll = { busy: true, startedAt: Date.now(), states: states };
+  // тикаем раз в секунду, чтобы было видно, что процесс живой
+  if (aiTick) clearInterval(aiTick);
+  aiTick = setInterval(render, 1000);
   render();
+
   await Promise.all(
-    tokens.map(async (symbol) => {
+    tokens.map(async function (symbol) {
       try {
-        await api("/api/token/analyze", { method: "POST", body: JSON.stringify({ symbol: symbol }) });
-      } finally {
-        aiRunAll.done += 1;
-        render();
+        const res = await api("/api/token/analyze", { method: "POST", body: JSON.stringify({ symbol: symbol }) });
+        aiRunAll.states[symbol] = res && res.ok ? "done" : "fail";
+      } catch (e) {
+        aiRunAll.states[symbol] = "fail";
       }
+      render();
     })
   );
+
   aiRunAll.busy = false;
+  if (aiTick) { clearInterval(aiTick); aiTick = null; }
   await loadAnalysis(true, true);
+  // сводку о прогоне держим на экране полминуты, потом убираем
+  setTimeout(function () { aiRunAll.states = {}; render(); }, 30000);
 }
 
 let freshTimer = null;
@@ -202,6 +245,7 @@ function portfolioPage() {
       '<button class="primary-button" data-act="edit">＋ Мои токены</button>',
   });
 
+  html += aiRunProgress();
   if (state.error) html += '<div class="error-banner">' + esc(state.error) + "</div>";
   if (!a) return html + (state.loading ? '<div class="loading"><i></i>Считаю портфель…</div>' : "");
 
@@ -403,9 +447,10 @@ function risksPage() {
     actions:
       '<button class="ghost-button" data-act="reload">' + (state.loading ? "Считаю…" : "Обновить цены") + "</button>" +
       '<button class="primary-button" data-act="ai-run-all"' + (aiRunAll.busy ? " disabled" : "") + ">" +
-      (aiRunAll.busy ? "Разбор ASCN " + aiRunAll.done + " из " + aiRunAll.total + "…" : "Обновить разбор ASCN") +
+      (aiRunAll.busy ? "Идёт разбор ASCN…" : "Обновить разбор ASCN") +
       "</button>",
   });
+  html += aiRunProgress();
   if (!a) return html + (state.loading ? '<div class="loading"><i></i>Собираю метрики…</div>' : "");
 
   const ranked = a.tokens.slice().sort((x, y) => x.score - y.score);
