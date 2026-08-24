@@ -483,12 +483,9 @@ async function agentPage() {
 async function renderAgentBody() {
   const target = $("#agent-body");
   if (!target) return;
-  const [s, hist, job, health] = await Promise.all([
-    api("/api/settings"),
-    api("/api/agent/history"),
-    api("/api/agent/job"),
-    api("/api/health"),
-  ]);
+  // историю и состояние источников страница больше не показывает,
+  // поэтому и не запрашивает: история живёт на своей странице
+  const [s, job] = await Promise.all([api("/api/settings"), api("/api/agent/job")]);
   state.settings = s;
   state.job = job.job;
 
@@ -574,55 +571,6 @@ async function renderAgentBody() {
     '<div id="ai-note"></div></div></div>';
 
   // источники
-  html += '<h2 class="section-heading">Состояние источников</h2><div class="card">';
-  html += health.sources
-    .map(
-      (src) =>
-        '<div class="source-row"><i class="status-dot" style="background:' + (src.fresh === null ? "#cfd5e6" : src.fresh ? "var(--green)" : "var(--amber)") + '"></i>' +
-        "<b>" + esc(src.name) + '</b><span class="what">' + esc(src.what) + '</span><span class="age">' +
-        (src.ageMinutes == null ? "ещё не загружалось" : src.ageMinutes < 60 ? Math.round(src.ageMinutes) + " мин назад" : Math.round(src.ageMinutes / 60) + " ч назад") +
-        "</span></div>"
-    )
-    .join("");
-  html += "</div>";
-
-  // история
-  html += '<h2 class="section-heading">История запусков</h2>';
-  const runs = hist.runs || [];
-  if (!runs.length)
-    html += '<div class="empty-state"><h3>Запусков ещё не было</h3><p>Нажмите «Запустить разбор» — придёт первая сводка.</p></div>';
-  else {
-    html += '<div class="card">';
-    html += runs
-      .map((r) => {
-        const counts = ["critical", "warning", "positive"].map((lvl) => r.alerts.filter((a) => a.level === lvl).length);
-        const aiCount = (r.ai || []).filter((a) => a.content).length;
-        return (
-          '<div><button class="run-row" data-act="run-toggle" data-id="' + esc(r.id) + '">' +
-          '<span class="mono" style="width:130px;color:#333c4e;font-weight:600">' + new Date(r.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + "</span>" +
-          '<span style="width:90px">' + (r.trigger === "cron" ? "по расписанию" : "вручную") + "</span>" +
-          '<span class="mono" style="width:96px;color:#333c4e;font-weight:600">' + money(r.totalValueUsd) + "</span>" +
-          '<span style="display:flex;gap:6px;flex-wrap:wrap">' +
-          (counts[0] ? '<span class="pill pill-red">' + counts[0] + " критич</span>" : "") +
-          (counts[1] ? '<span class="pill pill-amber">' + counts[1] + " внимание</span>" : "") +
-          (counts[2] ? '<span class="pill pill-green">' + counts[2] + " позитив</span>" : "") +
-          (aiCount ? '<span class="pill pill-blue">ИИ · ' + aiCount + "</span>" : "") +
-          (!r.alerts.length ? '<span class="pill pill-gray">без сигналов</span>' : "") + "</span>" +
-          '<span style="margin-left:auto;color:' + (r.telegram.sent ? "var(--green)" : "#9aa1af") + '">' + (r.telegram.sent ? "отправлено" : "не отправлено") + "</span></button>" +
-          '<div id="run-' + esc(r.id) + '" style="display:none"><pre class="run-summary">' + esc(r.summary) + "</pre>" +
-          (r.ai || [])
-            .map((x) =>
-              '<div class="ai-block"><div class="ai-head"><strong>🔍 ' + esc(x.symbol) + " — разбор ИИ</strong><span>" +
-              (x.content ? x.seconds + " с" : "не получилось: " + esc(x.error || "")) + "</span></div>" +
-              (x.content ? '<pre class="run-summary" style="border-top:0">' + esc(x.content) + "</pre>" : "") + "</div>"
-            )
-            .join("") + "</div></div>"
-        );
-      })
-      .join("");
-    html += "</div>";
-  }
-
   target.innerHTML = html;
 }
 
@@ -994,17 +942,114 @@ function renderEditor() {
 
 function currentRoute() {
   const hash = location.hash.replace(/^#/, "") || "/";
-  return hash === "/risks" ? "/risks" : hash === "/agent" ? "/agent" : "/";
+  return ["/risks", "/agent", "/history"].indexOf(hash) >= 0 ? hash : "/";
+}
+
+// ————— История: запуски агента и разборы ассистента, с фильтром по токену —————
+
+let histFilter = "";
+
+async function historyPage() {
+  const [runsRes, anRes] = await Promise.all([api("/api/agent/history"), api("/api/analyses")]);
+  const runs = (runsRes && runsRes.runs) || [];
+  const analyses = (anRes && anRes.analyses) || {};
+
+  // список токенов: и те, что в портфеле, и те, что встречались в прошлых запусках
+  const seen = {};
+  ((state.analysis && state.analysis.tokens) || []).forEach((t) => (seen[t.symbol] = true));
+  Object.keys(analyses).forEach((sym) => (seen[sym] = true));
+  runs.forEach((r) => {
+    (r.ai || []).forEach((a) => (seen[a.symbol] = true));
+    (r.alerts || []).forEach((a) => a.symbol && (seen[a.symbol] = true));
+  });
+  const symbols = Object.keys(seen).sort();
+
+  const touches = (r, sym) =>
+    !sym ||
+    (r.ai || []).some((a) => a.symbol === sym) ||
+    (r.alerts || []).some((a) => a.symbol === sym);
+
+  const shown = runs.filter((r) => touches(r, histFilter));
+  const count = (sym) => runs.filter((r) => touches(r, sym)).length;
+
+  const side =
+    '<div class="hist-side"><button class="hist-chip' + (histFilter ? "" : " active") + '" data-act="hist-filter" data-symbol="">' +
+    "Все токены<span>" + runs.length + "</span></button>" +
+    symbols
+      .map(
+        (sym) =>
+          '<button class="hist-chip' + (histFilter === sym ? " active" : "") + '" data-act="hist-filter" data-symbol="' + esc(sym) + '">' +
+          esc(sym) + "<span>" + count(sym) + "</span></button>"
+      )
+      .join("") + "</div>";
+
+  const rows = shown.length
+    ? shown
+        .map((r) => {
+          const ai = (r.ai || []).filter((a) => !histFilter || a.symbol === histFilter);
+          const alerts = (r.alerts || []).filter((a) => !histFilter || a.symbol === histFilter);
+          const saved = histFilter ? (analyses[histFilter] || []).find((x) => (x.at || "").slice(0, 16) === (r.at || "").slice(0, 16)) : null;
+          return (
+            '<article class="hist-row"><header><b>' + when(r.at) + "</b>" +
+            '<span class="pill pill-gray">' + (r.trigger === "cron" ? "по расписанию" : "вручную") + "</span>" +
+            '<span class="mono">' + money(r.totalValueUsd) + "</span>" +
+            '<span class="pill ' + (r.telegram && r.telegram.sent ? "pill-green" : "pill-gray") + '">' +
+            (r.telegram && r.telegram.sent ? "отправлено" : "не отправлено") + "</span></header>" +
+            (saved && saved.summary ? '<p class="hist-summary">' + esc(saved.summary) + "</p>" : "") +
+            (alerts.length
+              ? '<div class="hist-alerts">' +
+                alerts.map((a) => '<p class="' + (a.level === "critical" ? "c" : "") + '"><b>' + esc(a.title) + "</b></p>").join("") +
+                "</div>"
+              : "") +
+            (ai.length
+              ? '<p class="hint">разбор ассистента: ' +
+                ai.map((a) => esc(a.symbol) + (a.error ? " — не ответил" : a.seconds ? " (" + Math.round(a.seconds) + " с)" : "")).join(", ") +
+                "</p>"
+              : "") +
+            "</article>"
+          );
+        })
+        .join("")
+    : '<p class="hint">По этому токену запусков пока не было.</p>';
+
+  const saved = histFilter ? analyses[histFilter] || [] : [];
+  const savedBlock = saved.length
+    ? '<h2 class="section-heading">Итоги ASCN по ' + esc(histFilter) + " · " + saved.length + "</h2>" +
+      '<div class="card"><div class="card-body">' +
+      saved
+        .map(
+          (x) =>
+            '<div class="hist-insight"><b>' + when(x.at) + "</b><p>" + esc(x.summary || "—") + "</p>" +
+            ((x.pros || []).concat(x.cons || []).length
+              ? '<div class="card-proscons">' +
+                (x.pros || []).slice(0, 2).map((v) => '<p class="p"><i></i>' + esc(v) + "</p>").join("") +
+                (x.cons || []).slice(0, 2).map((v) => '<p class="c"><i></i>' + esc(v) + "</p>").join("") +
+                "</div>"
+              : "") + "</div>"
+        )
+        .join("") + "</div></div>"
+    : "";
+
+  return (
+    '<div class="page-head"><div><span class="eyebrow">АРХИВ</span><h1>История</h1>' +
+    "<p>" + (histFilter ? "Запуски, где участвовал " + esc(histFilter) : "Все запуски агента: что нашлось и что ушло в Telegram") + "</p></div></div>" +
+    '<div class="hist-layout">' + side + '<div class="hist-main">' + rows + savedBlock + "</div></div>"
+  );
 }
 
 async function render() {
   const route = currentRoute();
   document.querySelectorAll(".main-nav a").forEach((a) => a.classList.toggle("active", a.dataset.nav === route));
-  $("#crumb").textContent = route === "/risks" ? "Рейтинг риска" : route === "/agent" ? "Агент" : "Портфель";
+  $("#crumb").textContent =
+    { "/risks": "Рейтинг риска", "/agent": "Агент", "/history": "История" }[route] || "Портфель";
 
   if (route === "/agent") {
     view().innerHTML = await agentPage();
     renderAgentBody();
+    return;
+  }
+  if (route === "/history") {
+    view().innerHTML = await historyPage();
     return;
   }
   view().innerHTML = route === "/risks" ? risksPage() : portfolioPage();
@@ -1054,6 +1099,10 @@ document.addEventListener("click", async (e) => {
       if (t) renderDrawer(t);
       break;
     }
+    case "hist-filter":
+      histFilter = target.dataset.symbol || "";
+      render();
+      break;
     case "ai-run":
       runTokenAnalysis(target.dataset.symbol);
       break;

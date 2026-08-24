@@ -454,3 +454,29 @@ a { color: inherit; text-decoration: none; }
   .ai-hist { flex-direction: row; overflow-x: auto; max-height: none; }
   .hist-item { flex: 0 0 160px; }
 }
+
+/* ————— Страница истории ————— */
+.hist-layout { display: grid; grid-template-columns: 176px 1fr; gap: 20px; align-items: start; }
+.hist-side { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 88px; }
+.hist-chip { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: #4a5365; font-size: 12px; font-weight: 600; }
+.hist-chip span { color: var(--muted); font-size: 10.5px; font-weight: 400; }
+.hist-chip.active { border-color: var(--blue); background: var(--blue-soft); color: var(--blue-dark); }
+.hist-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.hist-row { padding: 14px 16px; border: 1px solid var(--line); border-radius: 13px; background: #fff; box-shadow: 0 4px 12px #26325408; }
+.hist-row header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hist-row header b { color: var(--ink); font-size: 12px; }
+.hist-row header .mono { margin-left: auto; color: #3f485a; font-size: 12px; }
+.hist-summary { margin: 10px 0 0; color: var(--ink); font-size: 12.5px; line-height: 1.55; }
+.hist-alerts p { margin: 8px 0 0; color: #4a5365; font-size: 11.5px; }
+.hist-alerts p.c b { color: var(--red); }
+.hist-row .hint { margin: 9px 0 0; }
+.hist-insight { padding: 12px 0; border-bottom: 1px solid #edf0f4; }
+.hist-insight:last-child { border-bottom: 0; }
+.hist-insight b { color: var(--muted); font-size: 10.5px; }
+.hist-insight p { margin: 5px 0 0; color: var(--ink); font-size: 12.5px; line-height: 1.55; }
+
+@media (max-width: 720px) {
+  .hist-layout { grid-template-columns: 1fr; }
+  .hist-side { position: static; flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
+  .hist-chip { flex: 0 0 auto; }
+}

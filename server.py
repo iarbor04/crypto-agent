@@ -286,6 +286,11 @@ def api_x_posts(query: Dict[str, str], __: Any) -> Any:
     return xapi.get_posts(handle)
 
 
+def api_analyses(_: Dict[str, str], __: Any) -> Any:
+    """Все разборы ассистента по токенам — для страницы истории."""
+    return {"analyses": store.read_json("ai-history.json", {}) or {}}
+
+
 def api_agent_job(_: Dict[str, str], __: Any) -> Any:
     return {"job": get_job()}
 
@@ -346,6 +351,7 @@ ROUTES: Dict[Tuple[str, str], Callable[[Dict[str, str], Any], Any]] = {
     ("GET", "/api/agent/job"): api_agent_job,
     ("GET", "/api/agent/history"): api_agent_history,
     ("GET", "/api/token/history"): api_token_history,
+    ("GET", "/api/analyses"): api_analyses,
     ("POST", "/api/token/analyze"): api_token_analyze,
     ("POST", "/api/telegram/test"): api_telegram_test,
     ("POST", "/api/telegram/detect"): api_telegram_detect,
@@ -431,7 +437,7 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_static(self, path: str) -> None:
         rel = "index.html" if path in ("/", "") else path.lstrip("/")
         # три страницы одного приложения отдают один и тот же html
-        if rel in ("risks", "agent"):
+        if rel in ("risks", "agent", "history"):
             rel = "index.html"
         target = os.path.normpath(os.path.join(PUBLIC_DIR, rel))
         if not target.startswith(PUBLIC_DIR) or not os.path.isfile(target):
