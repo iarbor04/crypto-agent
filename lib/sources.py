@@ -605,12 +605,14 @@ def read_indicators(ind: Dict[str, Any]) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     rsi = ind.get("rsi14")
     if rsi is not None:
+        # Только число и порог. «Покупатели выдохлись» при RSI 84 в тренде
+        # обычно неверно, а читатель принимает это за факт.
         if rsi >= 70:
-            out.append({"text": "RSI %d — перекупленность, покупатели выдохлись" % rsi, "tone": "bad"})
+            out.append({"text": "RSI 14 равен %d — выше порога 70" % rsi, "tone": "bad"})
         elif rsi <= 30:
-            out.append({"text": "RSI %d — перепроданность, продавцы выдохлись" % rsi, "tone": "good"})
+            out.append({"text": "RSI 14 равен %d — ниже порога 30" % rsi, "tone": "good"})
         else:
-            out.append({"text": "RSI %d — без крайностей" % rsi, "tone": "neutral"})
+            out.append({"text": "RSI 14 равен %d — между 30 и 70" % rsi, "tone": "neutral"})
     if ind.get("aboveSma50") is not None:
         above = ind["aboveSma50"]
         out.append(

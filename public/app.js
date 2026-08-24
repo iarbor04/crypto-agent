@@ -193,7 +193,12 @@ function portfolioPage() {
   const needsAction = a.tokens.filter((t) => t.verdict === "sell" || t.verdict === "reduce").length;
   html +=
     '<div class="metric-row">' +
-    metricCard("Можно заработать на стейкинге", money(a.potentialYearlyUsd) + " в год", "если разложить " + money(a.idleValueUsd) + " по проверенным пулам", "var(--green)") +
+    metricCard(
+      "Потолок доходности по пулам",
+      money(a.potentialYearlyUsd) + " в год",
+      "верхняя граница, если весь " + money(a.idleValueUsd) + " уйдёт в пулы: без учёта локов, риска контракта и потерь LP",
+      "var(--green)"
+    ) +
     metricCard("В слабых позициях", money(riskyValue), risky.length ? Math.round(a.totalValueUsd ? (riskyValue / a.totalValueUsd) * 100 : 0) + "% портфеля · " + risky.length + " из " + a.tokens.length + " токенов с повышенным риском" : "все позиции с умеренным или низким риском", riskyValue ? "var(--red)" : "var(--green)") +
     metricCard("Слабых позиций", String(needsAction), needsAction ? "позиции слабее рынка или со сломанным трендом" : "все позиции идут с рынком", needsAction ? "var(--red)" : "var(--green)") +
     "</div>";
@@ -500,6 +505,27 @@ function riskCard(t, rank) {
     const pct = (t.valueUsd / vol) * 100;
     facts.push("позиция — " + (pct < 0.1 ? "меньше 0.1" : pct.toFixed(1)) + "% заявленного суточного объёма");
   }
+  // Во сколько обойдётся выход всей позицией. Просадка в пуле и в стакане
+  // растёт примерно линейно от объёма, поэтому берём отношение позиции
+  // к глубине, которая держит один процент.
+  if (lq && lq.sellCapacityUsd && t.valueUsd > 0) {
+    const impact = (t.valueUsd / lq.sellCapacityUsd) * 1;
+    facts.push(
+      impact < 0.2
+        ? "выход всей позицией — дешевле 0.2% просадки"
+        : "выход всей позицией — около " + (impact < 10 ? impact.toFixed(1) : Math.round(impact)) + "% просадки"
+    );
+  }
+  // Сколько дней среднего объёма занимает позиция: для крупной книги это
+  // и есть настоящий срок выхода, а не мгновенная глубина.
+  if (vol && t.valueUsd > 0) {
+    const days = t.valueUsd / (vol * 0.1);
+    if (days >= 0.05) {
+      facts.push(
+        "при 10% участия в объёме выходить " + (days < 1 ? "меньше дня" : days < 10 ? days.toFixed(1) + " дня" : Math.round(days) + " дней")
+      );
+    }
+  }
   // Заявленный объём и измеренная глубина расходятся на порядки у токенов
   // с накрученной торговлей. Инвестору важно знать, что объём здесь ничего
   // не значит, потому что выйти по нему нельзя.
@@ -526,7 +552,7 @@ function riskCard(t, rank) {
     "<span>7д " + delta(t.market && t.market.change7d) + "</span><span>30д " + delta(t.market && t.market.change30d) + "</span></div></div>" +
     '<button class="ghost-button" data-token="' + esc(t.symbol) + '">Подробно</button></header>' +
     '<div class="reason-grid-wrap"><div class="risk-verdict"><div><span class="label">Оценка позиции</span><h3>' + esc(verdictHeadline(t, hasUpside)) + "</h3></div>" +
-    '<div style="display:flex;align-items:flex-start;gap:14px">' + riskScale(t.score) + '<span class="step"><b>' + step + "</b> / 5</span></div></div>" +
+    '<div style="display:flex;align-items:flex-start;gap:14px">' + riskScale(t.score) + "</div></div>" +
     prosConsBlock(t, true) + "</div>" +
     '<div class="plan-strip"><span class="pill pill-gray">ФАКТЫ</span><span>' + esc(facts.join(" · ")) + "</span></div></article>"
   );
@@ -790,7 +816,7 @@ function whyTab(t) {
   const hasUpside = t.reasons.some((r) => r.kind === "good") || ((t.ai || {}).pros || []).length > 0;
   let html =
     '<div class="risk-verdict"><div><span class="label">Оценка позиции</span><h3>' + esc(verdictHeadline(t, hasUpside)) + "</h3></div>" +
-    '<div style="display:flex;align-items:flex-start;gap:14px">' + riskScale(t.score) + '<span class="step"><b>' + (t.risk ? t.risk.step : 3) + "</b> / 5</span></div></div>" +
+    '<div style="display:flex;align-items:flex-start;gap:14px">' + riskScale(t.score) + "</div></div>" +
     prosConsBlock(t);
   if (t.ai) html += '<p class="hint" style="margin:12px 0 16px;font-size:10.5px">Первые пункты — из разбора ассистента ASCN от ' + new Date(t.ai.at).toLocaleString("ru-RU") + ", остальные из моей модели.</p>";
   if ((t.indicatorsRead || []).length)
