@@ -25,7 +25,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-from lib import auth, market, net, sources, store  # noqa: E402
+from lib import auth, market, net, sources, store, xapi  # noqa: E402
 from lib.agent import (  # noqa: E402
     analyze_one,
     ask_ascn,
@@ -205,6 +205,8 @@ def api_settings_get(_: Dict[str, str], __: Any) -> Any:
         "sendEmptyDigest": s["sendEmptyDigest"],
         "refreshMinutes": s["refreshMinutes"],
         "schedule": s["schedule"],
+        "x": {"hasToken": bool(s["x"]["bearerToken"]), "mask": mask(s["x"]["bearerToken"]),
+              "fromEnv": bool(os.environ.get("X_BEARER_TOKEN")) and not (store.read_json("settings.json", {}).get("x") or {}).get("bearerToken")},
         "ai": {
             "enabled": s["ai"]["enabled"],
             "maxTokensPerRun": s["ai"]["maxTokensPerRun"],
@@ -263,6 +265,25 @@ def api_token_history(query: Dict[str, str], __: Any) -> Any:
     if not symbol:
         return {"error": "не указан токен", "_status": 400}
     return {"symbol": symbol.upper(), "history": insight_history(symbol), "last": last_insight(symbol)}
+
+
+def api_x_check(_: Dict[str, str], body: Any) -> Any:
+    """Сначала проверяем, потом сохраняем: негодный токен не должен
+    затирать рабочий."""
+    token = ((body or {}).get("bearerToken") or "").strip()
+    res = xapi.check(token)
+    if res.get("ok") and token:
+        save_settings({"x": {"bearerToken": token}})
+    if not res.get("ok"):
+        res["_status"] = 400
+    return res
+
+
+def api_x_posts(query: Dict[str, str], __: Any) -> Any:
+    handle = (query.get("handle") or "").strip().lstrip("@")
+    if not handle:
+        return {"error": "не указан аккаунт", "_status": 400}
+    return xapi.get_posts(handle)
 
 
 def api_agent_job(_: Dict[str, str], __: Any) -> Any:
@@ -329,6 +350,8 @@ ROUTES: Dict[Tuple[str, str], Callable[[Dict[str, str], Any], Any]] = {
     ("POST", "/api/telegram/test"): api_telegram_test,
     ("POST", "/api/telegram/detect"): api_telegram_detect,
     ("POST", "/api/ascn/check"): api_ascn_check,
+    ("POST", "/api/x/check"): api_x_check,
+    ("GET", "/api/x/posts"): api_x_posts,
 }
 
 

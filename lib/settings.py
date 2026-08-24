@@ -44,6 +44,7 @@ def get_settings() -> Dict[str, Any]:
         "sendEmptyDigest": bool(saved.get("sendEmptyDigest", False)),
         "refreshMinutes": max(5, min(int(saved.get("refreshMinutes") or 30), 240)),
         "schedule": _normalize_schedule(saved.get("schedule") or {}),
+        "x": {"bearerToken": (saved.get("x") or {}).get("bearerToken") or os.environ.get("X_BEARER_TOKEN", "")},
         "ai": {
             "enabled": bool(ai.get("enabled", True)),
             "maxTokensPerRun": max(0, min(int(ai.get("maxTokensPerRun") or 3), 8)),
@@ -77,6 +78,12 @@ def save_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
             merged = dict(cur.get("schedule") or {})
             merged.update(patch["schedule"])
             out["schedule"] = _normalize_schedule(merged)
+
+        x_patch = patch.get("x") or {}
+        if isinstance(x_patch.get("bearerToken"), str):
+            token = x_patch["bearerToken"].strip()
+            # пустая строка — это осознанное «убрать ключ»
+            out["x"] = {"bearerToken": token} if token else {}
 
         if ai_patch:
             out["ai"] = {

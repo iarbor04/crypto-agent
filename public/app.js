@@ -560,7 +560,16 @@ async function renderAgentBody() {
     [["off", "Не смотреть"], ["notable", "Где есть движение"], ["all", "По всем токенам"]]
       .map(([v, l]) => '<button data-act="ai-social" data-social="' + v + '" class="' + (s.ai.social === v ? "active" : "") + '">' + l + "</button>")
       .join("") +
-    "<span>X смотрит сам ассистент: своего доступа к нему у дашборда нет</span></div>" +
+    "<span>" + (s.x && s.x.hasToken ? "посты берутся официальным X API" : "без ключа X смотрит сам ассистент") + "</span></div>" +
+    '<label class="field" style="margin-top:14px">BEARER TOKEN — developer.x.com → проект → Keys and tokens' +
+    '<input id="x-token" placeholder="' + esc((s.x && s.x.mask) || "AAAAAAAAAA…") + '"/></label>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+    '<button class="primary-button" data-act="x-save">Сохранить токен</button>' +
+    '<button class="ghost-button" data-act="x-check">Проверить</button>' +
+    '<span class="pill ' + (s.x && s.x.hasToken ? "pill-green" : "pill-gray") + '">' +
+    (s.x && s.x.hasToken ? (s.x.fromEnv ? "ключ из .env.local" : "ключ задан") : "ключа нет") + "</span></div>" +
+    '<p class="hint" style="margin-top:10px">Чтение постов у X платное: на бесплатном тарифе эндпоинт отдаёт 403. Без ключа всё работает как раньше — X смотрит ассистент.</p>' +
+    '<div id="x-note"></div>' +
     '<p class="hint" style="margin-top:14px">Один токен — 3–6 минут ожидания, запросы уходят параллельно. Если важных изменений нет, ИИ не вызывается.</p>' +
     '<div id="ai-note"></div></div></div>';
 
@@ -1157,6 +1166,24 @@ document.addEventListener("click", async (e) => {
       const key = ($("#ai-key") || {}).value || "";
       const res = await api("/api/ascn/check", { method: "POST", body: JSON.stringify(key ? { apiKey: key } : {}) });
       note("ai-note", res.ok ? "Ключ работает: ассистент " + res.model + " ответил за " + res.seconds + " с" : "Ключ не подошёл: " + res.error, res.ok);
+      break;
+    }
+    case "x-save":
+    case "x-check": {
+      const box = $("#x-token");
+      const note = $("#x-note");
+      if (note) note.innerHTML = '<p class="hint">Проверяю ключ…</p>';
+      const res = await api("/api/x/check", {
+        method: "POST",
+        body: JSON.stringify({ bearerToken: box && box.value ? box.value : "" }),
+      });
+      if (note) {
+        note.innerHTML = res && res.ok
+          ? '<p class="hint" style="color:var(--green)">Ключ рабочий — ' + esc(res.note || "чтение доступно") + "</p>"
+          : '<p class="hint" style="color:var(--red)">' + esc((res && res.error) || "не проверился") + "</p>";
+      }
+      state.settings = null;
+      renderAgentBody();
       break;
     }
     case "ai-template":

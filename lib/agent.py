@@ -9,7 +9,7 @@ import time
 import urllib.parse
 from typing import Any, Dict, List, Optional
 
-from . import store
+from . import store, xapi
 from .analyze import analyze_portfolio
 from .net import fetch_json
 from .score import risk_level
@@ -187,6 +187,9 @@ def build_token_prompt(token: Dict[str, Any], market_note: str,
 
     if social:
         handle = ((token.get("meta") or {}).get("twitter") or "").rstrip("/").rsplit("/", 1)[-1]
+        posts = xapi.digest(handle) if (handle and xapi.configured()) else None
+        if posts:
+            lines += ["", "Последние посты @%s (из официального X API):" % handle, posts]
         lines += [
             "",
             "Отдельно посмотри X (Twitter)%s:" % ((" — официальный аккаунт @" + handle) if handle else ""),
