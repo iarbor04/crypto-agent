@@ -137,7 +137,7 @@ TEMPLATES = {
 
 
 def build_token_prompt(token: Dict[str, Any], market_note: str,
-                       template: str = "summary", previous: Optional[Dict[str, Any]] = None,
+                       template: str = "full", previous: Optional[Dict[str, Any]] = None,
                        social: bool = False, custom: str = "") -> str:
     m = token.get("market") or {}
     ind = token.get("indicators") or {}
@@ -379,7 +379,7 @@ def parse_summary(content: str) -> str:
     return text[:700]
 
 
-HISTORY_LIMIT = 20
+HISTORY_LIMIT = 12
 
 
 def _wants_social(ai: Dict[str, Any], token: Dict[str, Any]) -> bool:
@@ -404,7 +404,7 @@ def insight_history(symbol: str) -> List[Dict[str, Any]]:
     return rows if isinstance(rows, list) else []
 
 
-def save_insight(symbol: str, content: str, template: str = "summary", seconds: Optional[float] = None) -> Dict[str, Any]:
+def save_insight(symbol: str, content: str, template: str = "full", seconds: Optional[float] = None) -> Dict[str, Any]:
     """Пишем разбор в две книги: последнее состояние и историю по токену."""
     parsed = parse_pros_cons(content)
     entry = {
@@ -426,8 +426,8 @@ def save_insight(symbol: str, content: str, template: str = "summary", seconds: 
     def put_history(cur):
         cur = cur or {}
         rows = cur.get(key) or []
-        # в истории храним только сжатое: полный текст живёт в последнем разборе
-        rows.insert(0, {k: entry[k] for k in ("at", "summary", "pros", "cons", "template", "seconds")})
+        # полный текст храним и здесь: прошлый разбор нужно уметь открыть целиком
+        rows.insert(0, {k: entry[k] for k in ("at", "summary", "pros", "cons", "template", "seconds", "content")})
         cur[key] = rows[:HISTORY_LIMIT]
         return cur
 
@@ -451,7 +451,7 @@ def analyze_one(symbol: str) -> Dict[str, Any]:
     ai = settings["ai"]
     prompt = build_token_prompt(
         token, market_note,
-        template=ai.get("template") or "summary",
+        template=ai.get("template") or "full",
         previous=last_insight(symbol),
         social=_wants_social(ai, token),
         custom=ai.get("customPrompt") or "",
@@ -459,7 +459,7 @@ def analyze_one(symbol: str) -> Dict[str, Any]:
     res = ask_ascn(prompt, token["symbol"], creds)
     if not res.get("content"):
         return {"error": res.get("error") or "Ассистент не ответил", "_status": 502}
-    entry = save_insight(token["symbol"], res["content"], ai.get("template") or "summary", res.get("seconds"))
+    entry = save_insight(token["symbol"], res["content"], ai.get("template") or "full", res.get("seconds"))
     return {"ok": True, "symbol": token["symbol"], "insight": entry, "history": insight_history(token["symbol"])}
 
 
@@ -696,7 +696,7 @@ def run_agent(trigger: str = "manual") -> Dict[str, Any]:
         lock = threading.Lock()
         done = [0]
 
-        template = settings["ai"].get("template") or "summary"
+        template = settings["ai"].get("template") or "full"
 
         def work(token):
             prompt = build_token_prompt(
@@ -720,7 +720,7 @@ def run_agent(trigger: str = "manual") -> Dict[str, Any]:
 
     fresh = [r for r in ai_results if r.get("content")]
     for r in fresh:
-        save_insight(r["symbol"], r["content"], settings["ai"].get("template") or "summary", r.get("seconds"))
+        save_insight(r["symbol"], r["content"], settings["ai"].get("template") or "full", r.get("seconds"))
 
     _update_job({"step": "отправляю в Telegram"})
     digest = build_digest(analysis, unique, prev)

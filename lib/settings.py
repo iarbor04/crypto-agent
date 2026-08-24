@@ -50,7 +50,7 @@ def get_settings() -> Dict[str, Any]:
             "maxTokensPerRun": max(0, min(int(ai.get("maxTokensPerRun") or 3), 8)),
             "apiKey": ai.get("apiKey") or os.environ.get("ASCN_API_KEY", ""),
             "model": ai.get("model") or os.environ.get("ASCN_MODEL", "ascn_v1.2"),
-            "template": ai.get("template") if ai.get("template") in ("summary", "full", "custom") else "summary",
+            "template": ai.get("template") if ai.get("template") in ("summary", "full", "custom") else "full",
             "customPrompt": ai.get("customPrompt") or "",
             # X смотрит сам ассистент: своего доступа к нему у нас нет.
             # notable — только по токенам, где что-то происходит.
@@ -94,7 +94,7 @@ def save_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
                 "apiKey": (ai_patch.get("apiKey") or "").strip() or ai_cur.get("apiKey", ""),
                 "model": (ai_patch.get("model") or "").strip() or ai_cur.get("model", "ascn_v1.2"),
                 "template": ai_patch.get("template") if ai_patch.get("template") in ("summary", "full", "custom")
-                else ai_cur.get("template", "summary"),
+                else ai_cur.get("template", "full"),
                 "customPrompt": ai_patch.get("customPrompt") if isinstance(ai_patch.get("customPrompt"), str)
                 else ai_cur.get("customPrompt", ""),
                 "social": ai_patch.get("social") if ai_patch.get("social") in ("off", "notable", "all")

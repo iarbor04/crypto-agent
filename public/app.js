@@ -139,6 +139,30 @@ async function loadAnalysis(force, sync) {
   render();
 }
 
+// Разбор ASCN идёт минуту-две на токен, поэтому гоняем все параллельно
+// и показываем, сколько уже готово.
+let aiRunAll = { busy: false, done: 0, total: 0 };
+
+async function runAllAnalysis() {
+  if (aiRunAll.busy) return;
+  const tokens = ((state.analysis && state.analysis.tokens) || []).map((t) => t.symbol);
+  if (!tokens.length) return;
+  aiRunAll = { busy: true, done: 0, total: tokens.length };
+  render();
+  await Promise.all(
+    tokens.map(async (symbol) => {
+      try {
+        await api("/api/token/analyze", { method: "POST", body: JSON.stringify({ symbol: symbol }) });
+      } finally {
+        aiRunAll.done += 1;
+        render();
+      }
+    })
+  );
+  aiRunAll.busy = false;
+  await loadAnalysis(true, true);
+}
+
 let freshTimer = null;
 
 function waitForFresh(tries) {
@@ -376,7 +400,11 @@ function risksPage() {
     eyebrow: "РЕЙТИНГ РИСКА",
     title: "На что обратить внимание",
     sub: "Самые слабые позиции сверху: что против них, что за них и что с этим делать",
-    actions: '<button class="ghost-button" data-act="reload">' + (state.loading ? "Считаю…" : "Обновить") + "</button>",
+    actions:
+      '<button class="ghost-button" data-act="reload">' + (state.loading ? "Считаю…" : "Обновить цены") + "</button>" +
+      '<button class="primary-button" data-act="ai-run-all"' + (aiRunAll.busy ? " disabled" : "") + ">" +
+      (aiRunAll.busy ? "Разбор ASCN " + aiRunAll.done + " из " + aiRunAll.total + "…" : "Обновить разбор ASCN") +
+      "</button>",
   });
   if (!a) return html + (state.loading ? '<div class="loading"><i></i>Собираю метрики…</div>' : "");
 
@@ -672,9 +700,9 @@ function aiTab(t) {
         : "") +
       '<p class="hint">' + (shown.at ? "разбор от " + when(shown.at) : "") +
       (shown.seconds ? " · ассистент отвечал " + Math.round(shown.seconds) + " с" : "") + "</p>" +
-      (shown.content
+      ((shown.content || (!picked && ai.content))
         ? '<details class="ai-full"' + (aiFullOpen ? " open" : "") + '><summary data-act="ai-full">Полный ответ ассистента</summary>' +
-          '<pre class="ai-raw">' + esc(shown.content) + "</pre></details>"
+          '<pre class="ai-raw">' + esc(shown.content || ai.content) + "</pre></details>"
         : picked
         ? '<p class="hint">Полный текст хранится только для последнего разбора — в истории остаётся итог с фактами.</p>'
         : "")
@@ -1176,6 +1204,9 @@ document.addEventListener("click", async (e) => {
       aiFullOpen = box ? !box.open : true;
       return;
     }
+    case "ai-run-all":
+      runAllAnalysis();
+      break;
     case "ai-run":
       runTokenAnalysis(target.dataset.symbol);
       break;
