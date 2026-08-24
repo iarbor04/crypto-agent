@@ -128,7 +128,7 @@ def score_token(
         if cover < 1.5:
             reasons.append(
                 {
-                    "text": "Позиция %s против ёмкости выхода %s — за один раз не продать, цену уроните сами"
+                    "text": "Позиция %s, а без просадки больше 1%% продаётся только %s — выходить придётся частями"
                     % (_money(value_usd), _money(capacity)),
                     "weight": -(10 - liq_score),
                     "kind": "bad",
@@ -137,7 +137,8 @@ def score_token(
         elif cover > 15:
             reasons.append(
                 {
-                    "text": "Ликвидности с запасом: рынок съедает %s за раз при позиции %s" % (_money(capacity), _money(value_usd)),
+                    "text": "Ликвидности с запасом: без просадки больше 1%% продаётся %s при позиции %s"
+                    % (_money(capacity), _money(value_usd)),
                     "weight": 4,
                     "kind": "good",
                 }

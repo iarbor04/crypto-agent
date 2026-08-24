@@ -128,7 +128,11 @@ def build_alerts(tokens: List[Dict[str, Any]], context: Dict[str, Any]) -> List[
             capacity = (t.get("liquidity") or {}).get("sellCapacityUsd")
             action = "В позиции %s" % _money(t["valueUsd"])
             if capacity:
-                action += ", рынок съедает за раз %s" % _money(capacity)
+                # «Съедает за раз» ничего не объясняет. Пишем, что это за число:
+                # сколько можно продать, пока цена не просела больше чем на 1%.
+                action += " · продать без просадки больше 1%%: %s" % _money(capacity)
+                if capacity < t["valueUsd"]:
+                    action += " — это меньше позиции"
             alerts.append(
                 {
                     "level": "critical" if t["verdict"] == "sell" else "warning",
