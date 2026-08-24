@@ -216,10 +216,13 @@ def build_token_prompt(token: Dict[str, Any], market_note: str,
             "  остановка выводов, обвал ликвидности) — скажи об этом первым предложением",
             "- если ничего существенного не изменилось, так и напиши одной фразой",
             "",
+            "Оба списка ниже обязательны — их читают в карточке токена.",
+            "Если аргументов на стороне нет, напиши в этом списке одну строку «- нет».",
+            "",
             "ЗА:",
-            "- до двух фактов с числами, каждый не длиннее 15 слов",
+            "- один-два факта с числами, каждый не длиннее 15 слов",
             "ПРОТИВ:",
-            "- до двух фактов с числами, каждый не длиннее 15 слов",
+            "- один-два факта с числами, каждый не длиннее 15 слов",
             "",
             "Максимум 140 слов на всё.",
         ]
@@ -317,8 +320,19 @@ def ask_ascn(message: str, symbol: str = "", creds: Optional[Dict[str, str]] = N
     return {"symbol": symbol, "content": res["content"], "error": None, "seconds": elapsed()}
 
 
+SECTION_RE = re.compile(r"(?<!\n)[ \t]*\*{0,2}\b(ЧТО ЗА ПОЗИЦИЮ|ЧТО ПРОТИВ|ПРОТИВ|ЗА|ИТОГ|ВЫВОД)\*{0,2}[ \t]*:")
+
+
+def _normalize_sections(content: str) -> str:
+    """Модель нередко пишет «ЗА:» и «ПРОТИВ:» внутри абзаца, а не с новой строки.
+    Тогда они утекают в итог и не попадают в списки — ставим перевод строки.
+    Регистр здесь важен: строчное «за:» в обычной фразе трогать нельзя."""
+    return SECTION_RE.sub(lambda m: "\n" + m.group(1) + ":", content or "")
+
+
 def parse_pros_cons(content: str) -> Dict[str, List[str]]:
     """Два списка фактов из ответа: по ним карточки показывают плюсы и минусы."""
+    content = _normalize_sections(content)
 
     def grab(heading: str) -> List[str]:
         # заголовок только с начала строки: короткие «ЗА»/«ПРОТИВ» иначе
@@ -350,7 +364,10 @@ def parse_pros_cons(content: str) -> Dict[str, List[str]]:
 
 def parse_summary(content: str) -> str:
     """Краткий итог: то, что показывается в карточке и уходит в сводку."""
-    m = re.search(r"(?:\*\*)?(?:ИТОГ|ВЫВОД)(?:\*\*)?\s*:?\s*", content or "", re.I)
+    content = _normalize_sections(content)
+    # Заголовок ищем только с начала строки и по границе слова: иначе «ВЫВОД»
+    # находится внутри фразы «Прошлый вывод…» и отрезает начало итога.
+    m = re.search(r"(?:^|\n)\s*(?:\*\*)?(?:ИТОГ|ВЫВОД)(?:\*\*)?\s*(?::|\n)\s*", content or "", re.I)
     if m:
         tail = content[m.end():]
         stop = re.search(r"\n\s*(?:\*\*)?(?:ЗА|ПРОТИВ|ЧТО ЗА|ЧТО ПРОТИВ)\b", tail)
@@ -598,6 +615,21 @@ def _pick_for_ai(analysis: Dict[str, Any], alerts: List[Dict[str, Any]], limit: 
             scores[t["symbol"]] = scores.get(t["symbol"], 0) + 1
         if any(abs(n["tone"]) >= 2 for n in t["news"]):
             scores[t["symbol"]] = scores.get(t["symbol"], 0) + 1
+
+    # Итог ассистента нужен в карточке каждого токена, поэтому у тех, где его
+    # нет или он старше суток, приоритет: иначе один и тот же проблемный токен
+    # разбирался бы каждый прогон, а остальные не получили бы итога никогда.
+    for t in analysis["tokens"]:
+        saved = last_insight(t["symbol"]) or {}
+        age_hours = None
+        if saved.get("at"):
+            try:
+                stamp = datetime.datetime.fromisoformat(saved["at"].replace("Z", "+00:00")).timestamp()
+                age_hours = (time.time() - stamp) / 3600
+            except Exception:
+                age_hours = None
+        if not saved.get("summary") or age_hours is None or age_hours > 24:
+            scores[t["symbol"]] = scores.get(t["symbol"], 0) + 4
 
     picked = [t for t in analysis["tokens"] if scores.get(t["symbol"], 0) > 0 and t["valueUsd"] >= 20]
     picked.sort(key=lambda t: (scores.get(t["symbol"], 0), t["valueUsd"]), reverse=True)
