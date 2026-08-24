@@ -203,7 +203,8 @@ function portfolioPage() {
     metricCard("Слабых позиций", String(needsAction), needsAction ? "позиции слабее рынка или со сломанным трендом" : "все позиции идут с рынком", needsAction ? "var(--red)" : "var(--green)") +
     "</div>";
 
-  if (a.alerts.length) html += '<div class="alert-grid">' + a.alerts.slice(0, 4).map(alertCard).join("") + "</div>";
+  // Карточки сигналов с портфеля убраны: то же самое видно в самих карточках
+  // токенов и в рейтинге риска. В сводку Telegram сигналы по-прежнему идут.
 
   if (!a.tokens.length) {
     html +=
@@ -294,39 +295,6 @@ function allocationCard(a) {
   );
 }
 
-const ALERT_STYLE = {
-  critical: { label: "ТРЕБУЕТ ВНИМАНИЯ", color: "#c33b42", bg: "var(--red-soft)", icon: "▲" },
-  warning: { label: "ВНИМАНИЕ", color: "#b9741a", bg: "var(--amber-soft)", icon: "▲" },
-  positive: { label: "ПОЗИТИВ", color: "#1c8f5a", bg: "var(--green-soft)", icon: "●" },
-  info: { label: "ЛЕЖИТ БЕЗ ДЕЛА", color: "#4658ea", bg: "var(--blue-soft)", icon: "◆" },
-};
-
-function alertCard(al) {
-  const s = ALERT_STYLE[al.level];
-  const t = ((state.analysis && state.analysis.tokens) || []).find((x) => x.symbol === al.symbol);
-  const ai = (t && t.ai) || {};
-  // Итог даёт ассистент ASCN. Пока разбора нет — показываем свои факты,
-  // чтобы карточка не была пустой, и говорим, чего ждём.
-  // итог ассистента уместен там, где речь о состоянии позиции,
-  // а не в подсказке «деньги лежат без дела»
-  const wantsAi = al.level === "critical" || al.level === "warning";
-  // В карточке — только итог: за и против лежат в самой карточке токена,
-  // в дровере и в рейтинге риска, дублировать их здесь незачем.
-  const verdict = wantsAi
-    ? ai.summary
-      ? '<p class="alert-ai">' + esc(ai.summary) + "</p>"
-      : (al.body ? "<p>" + esc(al.body) + "</p>" : "") +
-        '<p class="alert-wait">Итог ASCN появится после разбора</p>'
-    : al.body
-    ? "<p>" + esc(al.body) + "</p>"
-    : "";
-  return (
-    '<button class="alert-card" data-token="' + esc(al.symbol) + '"><span class="alert-icon" style="background:' + s.bg + ";color:" + s.color + '">' + s.icon + "</span>" +
-    '<div style="min-width:0"><span class="eyebrow" style="color:' + s.color + '">' + s.label + "</span>" +
-    "<strong>" + esc(al.title) + "</strong>" + verdict +
-    (al.action ? '<em style="color:' + s.color + '">' + esc(al.action) + "</em>" : "") + "</div></button>"
-  );
-}
 
 function sidesBlock(pros, cons) {
   const rows = []
