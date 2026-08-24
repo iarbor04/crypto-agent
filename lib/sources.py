@@ -477,7 +477,10 @@ def get_dex_liquidity(address: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-DEX_DEPTH_SHARE = 0.0025
+# В пуле с постоянным произведением просадка цены при продаже x равна примерно
+# x / (половина TVL). Значит, чтобы уложиться в 1%, можно продать около
+# 0.5% всего TVL пула. Это оценка, а не измерение — так и подписываем.
+DEX_ONE_PERCENT_SHARE = 0.005
 
 
 def get_liquidity(symbol: str, contract: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -485,12 +488,17 @@ def get_liquidity(symbol: str, contract: Optional[str]) -> Optional[Dict[str, An
     dex = get_dex_liquidity(contract) if contract else None
     if not book and not dex:
         return None
-    dex_depth = (dex["totalUsd"] * DEX_DEPTH_SHARE) if dex else 0
+    dex_depth = (dex["totalUsd"] * DEX_ONE_PERCENT_SHARE) if dex else 0
+    cex_depth = book["usd1"] if book else 0
     return {
         "binance": book,
         "dexTotalUsd": dex["totalUsd"] if dex else 0,
         "dexPairs": dex["pairs"] if dex else [],
-        "sellCapacityUsd": round((book["usd1"] if book else 0) + dex_depth),
+        # сколько можно продать, чтобы цена просела не более чем на 1%
+        "sellCapacityUsd": round(cex_depth + dex_depth),
+        "cexPartUsd": round(cex_depth),
+        "dexPartUsd": round(dex_depth),
+        "measured": bool(book),
     }
 
 

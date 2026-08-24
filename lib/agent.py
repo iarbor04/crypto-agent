@@ -368,13 +368,12 @@ def parse_summary(content: str) -> str:
     # Заголовок ищем только с начала строки и по границе слова: иначе «ВЫВОД»
     # находится внутри фразы «Прошлый вывод…» и отрезает начало итога.
     m = re.search(r"(?:^|\n)\s*(?:\*\*)?(?:ИТОГ|ВЫВОД)(?:\*\*)?\s*(?::|\n)\s*", content or "", re.I)
-    if m:
-        tail = content[m.end():]
-        stop = re.search(r"\n\s*(?:\*\*)?(?:ЗА|ПРОТИВ|ЧТО ЗА|ЧТО ПРОТИВ)\b", tail)
-        block = tail[: stop.start()] if stop else tail
-    else:
-        # шаблон «только итог» может ответить без заголовка — берём первый абзац
-        block = (content or "").split("\n\n")[0]
+    block = content[m.end():] if m else (content or "")
+    # Ответ часто идёт одним абзацем без заголовка, поэтому режем не по пустой
+    # строке, а по началу разделов «ЗА»/«ПРОТИВ» — они уже на своих строках.
+    stop = re.search(r"\n\s*(?:\*\*)?(?:ЧТО ЗА ПОЗИЦИЮ|ЧТО ПРОТИВ|ПРОТИВ|ЗА)\b\s*:", block)
+    if stop:
+        block = block[: stop.start()]
     text = re.sub(r"^[\s>*•·-]+", "", block.replace("**", "")).strip()
     text = re.sub(r"\s*\n\s*", " ", text)
     return text[:700]

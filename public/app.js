@@ -305,9 +305,11 @@ function alertCard(al) {
   // итог ассистента уместен там, где речь о состоянии позиции,
   // а не в подсказке «деньги лежат без дела»
   const wantsAi = al.level === "critical" || al.level === "warning";
+  // В карточке — только итог: за и против лежат в самой карточке токена,
+  // в дровере и в рейтинге риска, дублировать их здесь незачем.
   const verdict = wantsAi
     ? ai.summary
-      ? '<p class="alert-ai">' + esc(ai.summary) + "</p>" + sidesBlock(ai.pros, ai.cons)
+      ? '<p class="alert-ai">' + esc(ai.summary) + "</p>"
       : (al.body ? "<p>" + esc(al.body) + "</p>" : "") +
         '<p class="alert-wait">Итог ASCN появится после разбора</p>'
     : al.body
@@ -451,7 +453,8 @@ function prosConsBlock(t, compact) {
   const list = (items, cls, empty) =>
     items.length ? items.slice(0, compact ? 4 : 6).map((x) => "<p><i></i>" + esc(x) + "</p>").join("") : '<p class="none">' + empty + "</p>";
   const source = fromAi
-    ? '<p class="pc-source">разбор ассистента ASCN' + (ai.at ? " от " + when(ai.at) : "") + "</p>"
+    ? '<p class="pc-source">утверждения ассистента ASCN' + (ai.at ? " от " + when(ai.at) : "") +
+      " — даты, суммы и ссылки на людей мы не проверяли</p>"
     : '<p class="pc-source">пока своя модель — разбор ASCN появится после прогона агента</p>';
   return (
     '<div class="pros-cons"><div class="pros"><h4>Что за позицию</h4>' + list(pros, "p", "Плюсов не нашлось") + "</div>" +
@@ -478,10 +481,39 @@ function riskCard(t, rank) {
   const step = t.risk ? t.risk.step : 3;
   const hasUpside = t.reasons.some((r) => r.kind === "good") || ((t.ai || {}).pros || []).length > 0;
   const facts = [];
-  if (t.liquidity && t.liquidity.sellCapacityUsd) facts.push("Рынок съедает за раз " + money(t.liquidity.sellCapacityUsd) + " — позиция " + money(t.valueUsd));
-  else facts.push("Позиция " + money(t.valueUsd) + ", данных по глубине рынка нет");
+  const lq = t.liquidity;
+  if (lq && lq.sellCapacityUsd) {
+    const share = t.valueUsd > 0 ? (t.valueUsd / lq.sellCapacityUsd) * 100 : 0;
+    const parts = [];
+    if (lq.cexPartUsd) parts.push("стакан Binance " + money(lq.cexPartUsd));
+    if (lq.dexPartUsd) parts.push("пулы DEX ~" + money(lq.dexPartUsd) + ", оценка");
+    facts.push(
+      "Продать без просадки больше 1%: " + money(lq.sellCapacityUsd) +
+      (parts.length ? " (" + parts.join(" + ") + ")" : "") +
+      " — позиция " + money(t.valueUsd) + " это " + (share < 1 ? "меньше 1" : Math.round(share)) + "% от этого объёма"
+    );
+  } else {
+    facts.push("Позиция " + money(t.valueUsd) + ", глубину рынка измерить не удалось");
+  }
+  const vol = t.market && t.market.volume24h;
+  if (vol && t.valueUsd > 0) {
+    const pct = (t.valueUsd / vol) * 100;
+    facts.push("позиция — " + (pct < 0.1 ? "меньше 0.1" : pct.toFixed(1)) + "% заявленного суточного объёма");
+  }
+  // Заявленный объём и измеренная глубина расходятся на порядки у токенов
+  // с накрученной торговлей. Инвестору важно знать, что объём здесь ничего
+  // не значит, потому что выйти по нему нельзя.
+  if (vol && lq && lq.sellCapacityUsd && vol / lq.sellCapacityUsd > 200) {
+    const times = Math.round(vol / lq.sellCapacityUsd);
+    facts.push("заявленный объём " + money(vol) + " больше измеренной глубины в " + times.toLocaleString("ru-RU") + " раз");
+  }
   facts.push(t.best ? "доступна ставка " + t.best.apy.toFixed(1) + "% в год в " + t.best.project : "проверенного стейкинга нет");
-  if (t.funding != null) facts.push("плата за плечо " + Math.round(t.funding * 3 * 365 * 100) + "% в год");
+  // Это ставка фондирования перпов, а не расход держателя спота: положительная
+  // означает, что за лонги платят, то есть рынок перегрет в длинную сторону.
+  if (t.funding != null) {
+    const annual = Math.round(t.funding * 3 * 365 * 100);
+    facts.push("фондирование перпов " + (annual > 0 ? "+" : "") + annual + "% годовых — платят " + (annual > 0 ? "лонги" : "шорты"));
+  }
 
   return (
     '<article class="risk-card"><header><span class="risk-rank mono">' + String(rank).padStart(2, "0") + "</span>" +
@@ -618,6 +650,7 @@ function when(iso) {
 
 let drawerTab = "ai";
 let aiHistory = { symbol: null, rows: [], picked: 0, busy: false };
+let aiFullOpen = false;
 
 function aiTab(t) {
   const ai = t.ai || {};
@@ -644,7 +677,13 @@ function aiTab(t) {
           shown.cons.map((x) => "<p>" + esc(x) + "</p>").join("") + "</div>"
         : "") +
       '<p class="hint">' + (shown.at ? "разбор от " + when(shown.at) : "") +
-      (shown.seconds ? " · ассистент отвечал " + Math.round(shown.seconds) + " с" : "") + "</p>"
+      (shown.seconds ? " · ассистент отвечал " + Math.round(shown.seconds) + " с" : "") + "</p>" +
+      (shown.content
+        ? '<details class="ai-full"' + (aiFullOpen ? " open" : "") + '><summary data-act="ai-full">Полный ответ ассистента</summary>' +
+          '<pre class="ai-raw">' + esc(shown.content) + "</pre></details>"
+        : picked
+        ? '<p class="hint">Полный текст хранится только для последнего разбора — в истории остаётся итог с фактами.</p>'
+        : "")
     : '<p class="hint">Итог по токену даёт ассистент ASCN. Нажмите «Обновить анализ» — ответ идёт 3–6 минут.</p>';
 
   return (
@@ -1138,6 +1177,11 @@ document.addEventListener("click", async (e) => {
       histFilter = target.dataset.symbol || "";
       render();
       break;
+    case "ai-full": {
+      const box = target.closest("details");
+      aiFullOpen = box ? !box.open : true;
+      return;
+    }
     case "ai-run":
       runTokenAnalysis(target.dataset.symbol);
       break;
