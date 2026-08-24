@@ -151,7 +151,7 @@ function aiRunProgress() {
   const done = entries.filter((k) => aiRunAll.states[k] !== "run").length;
   const total = entries.length;
   const secs = Math.round((Date.now() - aiRunAll.startedAt) / 1000);
-  const time = secs < 60 ? secs + " с" : Math.floor(secs / 60) + " мин " + (secs % 60) + " с";
+  const time = Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0");
   const chips = entries
     .map(function (sym) {
       const st = aiRunAll.states[sym];
@@ -163,7 +163,8 @@ function aiRunProgress() {
     '<div class="ai-progress' + (aiRunAll.busy ? "" : " finished") + '">' +
     '<div class="ai-progress-head"><b>' +
     (aiRunAll.busy ? "Ассистент ASCN разбирает портфель" : "Разбор закончен") +
-    "</b><span>" + done + " из " + total + " · идёт " + time + "</span></div>" +
+    '</b><span class="ai-timer mono">' + (aiRunAll.busy ? "идёт " : "заняло ") + time + "</span></div>" +
+    '<div class="ai-progress-count">' + done + " из " + total + " токенов готово</div>" +
     // пока не готов ни один токен, полоса пустая и выглядит мёртвой —
     // тогда показываем бегущую вместо нулевой
     (done === 0 && aiRunAll.busy
@@ -241,7 +242,9 @@ function portfolioPage() {
     actions:
       '<div class="view-toggle"><button data-act="view-cards" class="' + (state.view === "cards" ? "active" : "") + '">Карточки</button>' +
       '<button data-act="view-table" class="' + (state.view === "table" ? "active" : "") + '">Таблица</button></div>' +
-      '<button class="ghost-button" data-act="reload">' + (state.loading ? "Считаю…" : "Обновить") + "</button>" +
+      '<button class="ghost-button" data-act="reload">' + (state.loading ? "Считаю…" : "Обновить цены") + "</button>" +
+      '<button class="ghost-button" data-act="ai-run-all"' + (aiRunAll.busy ? " disabled" : "") + ">" +
+      (aiRunAll.busy ? "Идёт разбор ASCN…" : "Обновить разбор ASCN") + "</button>" +
       '<button class="primary-button" data-act="edit">＋ Мои токены</button>',
   });
 
