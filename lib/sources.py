@@ -106,6 +106,22 @@ def _words(text: str) -> List[str]:
     return [w for w in re.split(r"[^a-z0-9]+", (text or "").lower()) if w]
 
 
+# Названия взломов режем на слова один раз: find_hacks зовётся по разу
+# на каждый подходящий пул, а список инцидентов один и тот же.
+_hack_words: Dict[int, List[List[str]]] = {}
+_hack_answers: Dict[str, List[Dict[str, Any]]] = {}
+
+
+def _hack_index(all_hacks: List[Dict[str, Any]]) -> List[List[str]]:
+    key = id(all_hacks)
+    cached_words = _hack_words.get(key)
+    if cached_words is None or len(cached_words) != len(all_hacks):
+        cached_words = [_words(h.get("name")) for h in all_hacks]
+        _hack_words.clear()
+        _hack_words[key] = cached_words
+    return cached_words
+
+
 def find_hacks(all_hacks: List[Dict[str, Any]], name: str) -> List[Dict[str, Any]]:
     """Слова названия инцидента должны быть началом названия протокола.
 
@@ -114,14 +130,22 @@ def find_hacks(all_hacks: List[Dict[str, Any]], name: str) -> List[Dict[str, Any
     target = _words(name)
     if not target or len(target[0]) < 3:
         return []
+    memo_key = "%d|%s" % (len(all_hacks), " ".join(target))
+    hit = _hack_answers.get(memo_key)
+    if hit is not None:
+        return hit
+    index = _hack_index(all_hacks)
     hits = []
-    for h in all_hacks:
-        hw = _words(h.get("name"))
+    for i, hw in enumerate(index):
         if not hw or len(hw) > len(target):
             continue
-        if all(w == target[i] for i, w in enumerate(hw)):
-            hits.append(h)
-    return sorted(hits, key=lambda h: h["date"], reverse=True)
+        if all(w == target[j] for j, w in enumerate(hw)):
+            hits.append(all_hacks[i])
+    hits = sorted(hits, key=lambda h: h["date"], reverse=True)
+    if len(_hack_answers) > 2000:
+        _hack_answers.clear()
+    _hack_answers[memo_key] = hits
+    return hits
 
 
 def years_since(date: str) -> float:

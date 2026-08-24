@@ -40,7 +40,7 @@ from lib.agent import (  # noqa: E402
     run_agent_background,
     send_telegram,
 )
-from lib.analyze import analyze_portfolio  # noqa: E402
+from lib.analyze import analysis_for_page, analyze_portfolio  # noqa: E402
 from lib.scheduler import next_run, start_scheduler, tzdata_available, zone_note  # noqa: E402
 from lib.settings import (  # noqa: E402
     get_portfolio,
@@ -81,8 +81,8 @@ def load_env() -> None:
 # ————— Обработчики API —————
 
 
-def api_analysis(_: Dict[str, str], __: Any) -> Any:
-    return analyze_portfolio()
+def api_analysis(query: Dict[str, str], __: Any) -> Any:
+    return analysis_for_page(force=query.get("fresh") == "1")
 
 
 def api_health(_: Dict[str, str], __: Any) -> Any:

@@ -480,3 +480,5 @@ a { color: inherit; text-decoration: none; }
   .hist-side { position: static; flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
   .hist-chip { flex: 0 0 auto; }
 }
+
+.pc-source { margin: 10px 0 0; color: var(--muted); font-size: 10px; }

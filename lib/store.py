@@ -81,20 +81,60 @@ def update_json(name: str, fallback: T, mutate: Callable[[T], T], cache: bool = 
         return nxt
 
 
+# Память об отказах. Без неё медленный источник наказывает при каждом обращении:
+# он не успевает за таймаут, значение в кэше не обновляется, и следующий вызов
+# снова честно ждёт таймаут. Раз источник только что не ответил — не трогаем его
+# несколько минут и сразу отдаём прошлое значение.
+FAILURE_PAUSE = 5 * 60
+_failed_until: Dict[str, float] = {}
+_fail_lock = threading.Lock()
+
+
 def cached(name: str, ttl_seconds: float, loader: Callable[[], Any]) -> Any:
     """Кэш на диске. Источник упал, а прошлое значение есть — отдаём его."""
     box = read_json(name, None, cache=True)
     fresh = isinstance(box, dict) and "at" in box and (time.time() - box["at"]) < ttl_seconds
     if fresh:
         return box.get("value")
+
+    with _fail_lock:
+        paused = _failed_until.get(name, 0) > time.time()
+    if paused and isinstance(box, dict) and "value" in box:
+        return box["value"]
+
     try:
         value = loader()
         write_json(name, {"at": time.time(), "value": value}, cache=True)
+        with _fail_lock:
+            _failed_until.pop(name, None)
         return value
     except Exception:
+        with _fail_lock:
+            _failed_until[name] = time.time() + FAILURE_PAUSE
         if isinstance(box, dict) and "value" in box:
             return box["value"]
         raise
+
+
+def sweep_temp_files(older_than_seconds: float = 3600) -> int:
+    """Подчищает .tmp от прерванных записей — иначе они копятся в data/."""
+    removed = 0
+    for folder in (DATA_DIR, CACHE_DIR):
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            continue
+        for name in names:
+            if ".tmp" not in name:
+                continue
+            path = os.path.join(folder, name)
+            try:
+                if time.time() - os.path.getmtime(path) > older_than_seconds:
+                    os.remove(path)
+                    removed += 1
+            except OSError:
+                continue
+    return removed
 
 
 def cache_age_minutes(name: str) -> Optional[float]:

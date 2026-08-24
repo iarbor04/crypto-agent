@@ -120,24 +120,47 @@ function sparkline(data, width, height) {
 
 // ————— загрузка данных —————
 
-async function loadAnalysis(force) {
+// sync=true заставляет сервер пересчитать всё и ждать ответа: это кнопка
+// «Обновить». Обычная загрузка берёт готовый снимок, а если он устарел,
+// сервер считает в фоне — тогда мы просто дочитываем результат.
+async function loadAnalysis(force, sync) {
   if (state.loading) return;
   if (state.analysis && !force) return;
   state.loading = true;
   state.error = null;
   render();
-  const data = await api("/api/analysis");
+  const data = await api("/api/analysis" + (sync ? "?fresh=1" : ""));
   state.loading = false;
-  if (data && data.tokens) state.analysis = data;
+  if (data && data.tokens) {
+    state.analysis = data;
+    if (data.stale) waitForFresh();
+  }
   else state.error = (data && (data.warning || data.error)) || "Не удалось получить разбор";
   render();
+}
+
+let freshTimer = null;
+
+function waitForFresh(tries) {
+  const left = tries === undefined ? 8 : tries;
+  if (freshTimer) clearTimeout(freshTimer);
+  if (left <= 0) return;
+  freshTimer = setTimeout(async () => {
+    const data = await api("/api/analysis");
+    if (data && data.tokens) {
+      state.analysis = data;
+      render();
+      if (data.stale) waitForFresh(left - 1);
+    }
+  }, 5000);
 }
 
 setInterval(() => {
   const a = state.analysis;
   if (!a) return;
   const minutes = a.refreshMinutes || 30;
-  if (Date.now() - new Date(a.generatedAt).getTime() >= minutes * 60000) loadAnalysis(true);
+  // по таймеру просим мягко: сервер сам решит, отдать снимок или пересчитать
+  if (Date.now() - new Date(a.generatedAt).getTime() >= minutes * 60000) loadAnalysis(true, false);
 }, 60000);
 
 // ————— страница «Портфель» —————
@@ -420,14 +443,26 @@ function risksPage() {
 
 function prosConsBlock(t, compact) {
   const ai = t.ai || {};
-  const pros = (ai.pros || []).concat(t.reasons.filter((r) => r.kind === "good").map((r) => r.text));
-  const cons = (ai.cons || []).concat(t.reasons.filter((r) => r.kind === "bad").map((r) => r.text));
+  // Разбор ассистента ASCN — основной источник. Своя модель показывается,
+  // только пока разбора по токену нет, и подписана как своя.
+  const fromAi = (ai.pros && ai.pros.length) || (ai.cons && ai.cons.length);
+  const pros = fromAi ? ai.pros || [] : t.reasons.filter((r) => r.kind === "good").map((r) => r.text);
+  const cons = fromAi ? ai.cons || [] : t.reasons.filter((r) => r.kind === "bad").map((r) => r.text);
   const list = (items, cls, empty) =>
     items.length ? items.slice(0, compact ? 4 : 6).map((x) => "<p><i></i>" + esc(x) + "</p>").join("") : '<p class="none">' + empty + "</p>";
+  const source = fromAi
+    ? '<p class="pc-source">разбор ассистента ASCN' + (ai.at ? " от " + when(ai.at) : "") + "</p>"
+    : '<p class="pc-source">пока своя модель — разбор ASCN появится после прогона агента</p>';
   return (
     '<div class="pros-cons"><div class="pros"><h4>Что за позицию</h4>' + list(pros, "p", "Плюсов не нашлось") + "</div>" +
-    '<div class="cons"><h4>Что против</h4>' + list(cons, "c", "Явных минусов нет") + "</div></div>"
+    '<div class="cons"><h4>Что против</h4>' + list(cons, "c", "Явных минусов нет") + "</div></div>" + source
   );
+}
+
+// Заголовок оценки: если ассистент дал итог — показываем его, а не мою формулу
+function verdictHeadline(t, hasUpside) {
+  const summary = (t.ai || {}).summary;
+  return summary || riskHeadline(t.score, hasUpside);
 }
 
 function riskHeadline(score, hasUpside) {
@@ -458,7 +493,7 @@ function riskCard(t, rank) {
     '<span class="mono" style="color:var(--ink);font-weight:700">' + money(t.valueUsd) + "</span>" +
     "<span>7д " + delta(t.market && t.market.change7d) + "</span><span>30д " + delta(t.market && t.market.change30d) + "</span></div></div>" +
     '<button class="ghost-button" data-token="' + esc(t.symbol) + '">Подробно</button></header>' +
-    '<div class="reason-grid-wrap"><div class="risk-verdict"><div><span class="label">Оценка позиции</span><h3>' + esc(riskHeadline(t.score, hasUpside)) + "</h3></div>" +
+    '<div class="reason-grid-wrap"><div class="risk-verdict"><div><span class="label">Оценка позиции</span><h3>' + esc(verdictHeadline(t, hasUpside)) + "</h3></div>" +
     '<div style="display:flex;align-items:flex-start;gap:14px">' + riskScale(t.score) + '<span class="step"><b>' + step + "</b> / 5</span></div></div>" +
     prosConsBlock(t, true) + "</div>" +
     '<div class="plan-strip"><span class="pill pill-gray">ФАКТЫ</span><span>' + esc(facts.join(" · ")) + "</span></div></article>"
@@ -715,7 +750,7 @@ function earnTab(t) {
 function whyTab(t) {
   const hasUpside = t.reasons.some((r) => r.kind === "good") || ((t.ai || {}).pros || []).length > 0;
   let html =
-    '<div class="risk-verdict"><div><span class="label">Оценка позиции</span><h3>' + esc(riskHeadline(t.score, hasUpside)) + "</h3></div>" +
+    '<div class="risk-verdict"><div><span class="label">Оценка позиции</span><h3>' + esc(verdictHeadline(t, hasUpside)) + "</h3></div>" +
     '<div style="display:flex;align-items:flex-start;gap:14px">' + riskScale(t.score) + '<span class="step"><b>' + (t.risk ? t.risk.step : 3) + "</b> / 5</span></div></div>" +
     prosConsBlock(t);
   if (t.ai) html += '<p class="hint" style="margin:12px 0 16px;font-size:10.5px">Первые пункты — из разбора ассистента ASCN от ' + new Date(t.ai.at).toLocaleString("ru-RU") + ", остальные из моей модели.</p>";
@@ -1082,7 +1117,7 @@ document.addEventListener("click", async (e) => {
       render();
       break;
     case "reload":
-      loadAnalysis(true);
+      loadAnalysis(true, true);
       break;
     case "edit":
       openEditor();
@@ -1090,7 +1125,7 @@ document.addEventListener("click", async (e) => {
     case "demo":
       await api("/api/portfolio/demo", { method: "POST" });
       state.analysis = null;
-      loadAnalysis(true);
+      loadAnalysis(true, true);
       break;
     case "drawer-tab": {
       drawerTab = target.dataset.tab;
@@ -1161,7 +1196,7 @@ document.addEventListener("click", async (e) => {
       await api("/api/portfolio", { method: "POST", body: JSON.stringify({ holdings }) });
       $("#modal-root").innerHTML = "";
       state.analysis = null;
-      loadAnalysis(true);
+      loadAnalysis(true, true);
       break;
     }
     case "run": {

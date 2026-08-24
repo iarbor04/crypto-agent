@@ -301,7 +301,7 @@ def analyze_portfolio() -> Dict[str, Any]:
         if ch is not None and (100 + ch) != 0:
             change24 += t["valueUsd"] * ch / (100 + ch)
 
-    return {
+    result = {
         "generatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "refreshMinutes": settings["refreshMinutes"],
         "totalValueUsd": total,
@@ -315,3 +315,51 @@ def analyze_portfolio() -> Dict[str, Any]:
         "tokens": tokens,
         "alerts": build_alerts(tokens, context),
     }
+    # Готовый разбор кладём на диск: страница открывается из него мгновенно,
+    # а пересчёт идёт в фоне.
+    try:
+        store.write_json("analysis-snapshot.json", result)
+    except Exception:
+        pass
+    return result
+
+
+_refreshing = threading.Lock()
+
+
+def snapshot_age_minutes() -> Optional[float]:
+    saved = store.read_json("analysis-snapshot.json", None)
+    if not isinstance(saved, dict) or not saved.get("generatedAt"):
+        return None
+    try:
+        stamp = datetime.datetime.fromisoformat(saved["generatedAt"].replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
+    return (time.time() - stamp) / 60
+
+
+def analysis_for_page(force: bool = False) -> Dict[str, Any]:
+    """Что отдавать в браузер: свежий снимок сразу, устаревший — тоже сразу,
+    но с пометкой и фоновым пересчётом. Считаем синхронно только когда
+    показывать вообще нечего."""
+    saved = store.read_json("analysis-snapshot.json", None)
+    age = snapshot_age_minutes()
+    if force or not isinstance(saved, dict) or age is None:
+        return analyze_portfolio()
+
+    limit = saved.get("refreshMinutes") or 30
+    if age <= limit:
+        return saved
+
+    if _refreshing.acquire(blocking=False):
+        def work():
+            try:
+                analyze_portfolio()
+            finally:
+                _refreshing.release()
+
+        threading.Thread(target=work, daemon=True).start()
+    out = dict(saved)
+    out["stale"] = True
+    out["ageMinutes"] = round(age, 1)
+    return out
