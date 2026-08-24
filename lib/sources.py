@@ -423,8 +423,12 @@ def get_dex_liquidity(address: str) -> Optional[Dict[str, Any]]:
     try:
         res = store.cached(
             "dex-%s.json" % address[:12],
-            15 * 60,
-            lambda: fetch_json("https://api.dexscreener.com/latest/dex/tokens/%s" % address, timeout=20),
+            # DexScreener отвечает медленно (до 20 секунд) и упирался в общий
+            # лимит на каждом разборе. Глубина пулов меняется небыстро, поэтому
+            # держим ответ час, а ждём не дольше восьми секунд: не успел —
+            # берётся прошлое значение из кэша.
+            60 * 60,
+            lambda: fetch_json("https://api.dexscreener.com/latest/dex/tokens/%s" % address, timeout=15),
         )
         pairs = res.get("pairs") or []
         if not pairs:
@@ -718,3 +722,28 @@ def get_portfolio_history(pairs: List[Tuple[str, float]], days: int) -> Dict[str
         "series": [round(v) for v in series],
         "from": time.strftime("%Y-%m-%d", time.gmtime(first_ts)),
     }
+
+def get_cex_earn(symbol: str) -> Optional[Dict[str, Any]]:
+    """Ставка биржевого вклада. Без ключа отдаёт только OKX: у Binance,
+    Bybit и KuCoin эти эндпоинты закрыты подписью, выдумывать их нельзя."""
+
+    def loader():
+        rows = (fetch_json("https://www.okx.com/api/v5/finance/savings/lending-rate-summary", timeout=12) or {}).get("data") or []
+        out = {}
+        for r in rows:
+            try:
+                rate = float(r.get("estRate") or r.get("preRate") or 0) * 100
+            except (TypeError, ValueError):
+                continue
+            if rate > 0:
+                out[(r.get("ccy") or "").upper()] = round(rate, 2)
+        return out
+
+    try:
+        table = store.cached("cex-earn.json", 60 * 60, loader) or {}
+    except Exception:
+        return None
+    apy = table.get(symbol.upper())
+    if not apy:
+        return None
+    return {"venue": "OKX", "kind": "Гибкий вклад", "apy": apy, "note": "ставка плавающая, начисление ежедневно"}

@@ -27,12 +27,15 @@ sys.path.insert(0, ROOT)
 
 from lib import auth, market, net, sources, store  # noqa: E402
 from lib.agent import (  # noqa: E402
+    analyze_one,
     ask_ascn,
     ascn_credentials,
     detect_chats,
     get_bot_info,
     get_job,
     get_runs,
+    insight_history,
+    last_insight,
     run_agent,
     run_agent_background,
     send_telegram,
@@ -208,6 +211,9 @@ def api_settings_get(_: Dict[str, str], __: Any) -> Any:
             "model": s["ai"]["model"],
             "hasApiKey": bool(s["ai"]["apiKey"]),
             "apiKeyMask": mask(s["ai"]["apiKey"]),
+            "template": s["ai"]["template"],
+            "customPrompt": s["ai"]["customPrompt"],
+            "social": s["ai"]["social"],
             "fromEnv": bool(os.environ.get("ASCN_API_KEY")) and not (store.read_json("settings.json", {}).get("ai") or {}).get("apiKey"),
         },
         "next": next_run(s["schedule"]["times"], s["schedule"]["timezone"]) if s["schedule"]["enabled"] else None,
@@ -221,7 +227,8 @@ def api_settings_post(_: Dict[str, str], body: Any) -> Any:
         "ok": True,
         "refreshMinutes": s["refreshMinutes"],
         "schedule": s["schedule"],
-        "ai": {"enabled": s["ai"]["enabled"], "maxTokensPerRun": s["ai"]["maxTokensPerRun"], "model": s["ai"]["model"], "hasApiKey": bool(s["ai"]["apiKey"])},
+        "ai": {"enabled": s["ai"]["enabled"], "maxTokensPerRun": s["ai"]["maxTokensPerRun"], "model": s["ai"]["model"], "hasApiKey": bool(s["ai"]["apiKey"]),
+               "template": s["ai"]["template"], "social": s["ai"]["social"], "customPrompt": s["ai"]["customPrompt"]},
         "next": next_run(s["schedule"]["times"], s["schedule"]["timezone"]) if s["schedule"]["enabled"] else None,
     }
 
@@ -241,6 +248,21 @@ def api_agent_run(query: Dict[str, str], __: Any) -> Any:
     if query.get("wait") == "1":
         return run_agent(trigger)
     return {"job": run_agent_background(trigger), "_status": 202}
+
+
+def api_token_analyze(query: Dict[str, str], body: Any) -> Any:
+    """Кнопка «Обновить анализ» в карточке токена. Ответ идёт 3-6 минут."""
+    symbol = (query.get("symbol") or (body or {}).get("symbol") or "").strip()
+    if not symbol:
+        return {"error": "не указан токен", "_status": 400}
+    return analyze_one(symbol)
+
+
+def api_token_history(query: Dict[str, str], __: Any) -> Any:
+    symbol = (query.get("symbol") or "").strip()
+    if not symbol:
+        return {"error": "не указан токен", "_status": 400}
+    return {"symbol": symbol.upper(), "history": insight_history(symbol), "last": last_insight(symbol)}
 
 
 def api_agent_job(_: Dict[str, str], __: Any) -> Any:
@@ -302,6 +324,8 @@ ROUTES: Dict[Tuple[str, str], Callable[[Dict[str, str], Any], Any]] = {
     ("POST", "/api/agent/run"): api_agent_run,
     ("GET", "/api/agent/job"): api_agent_job,
     ("GET", "/api/agent/history"): api_agent_history,
+    ("GET", "/api/token/history"): api_token_history,
+    ("POST", "/api/token/analyze"): api_token_analyze,
     ("POST", "/api/telegram/test"): api_telegram_test,
     ("POST", "/api/telegram/detect"): api_telegram_detect,
     ("POST", "/api/ascn/check"): api_ascn_check,

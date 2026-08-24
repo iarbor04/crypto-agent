@@ -275,12 +275,34 @@ const ALERT_STYLE = {
 
 function alertCard(al) {
   const s = ALERT_STYLE[al.level];
+  const t = ((state.analysis && state.analysis.tokens) || []).find((x) => x.symbol === al.symbol);
+  const ai = (t && t.ai) || {};
+  // Итог даёт ассистент ASCN. Пока разбора нет — показываем свои факты,
+  // чтобы карточка не была пустой, и говорим, чего ждём.
+  // итог ассистента уместен там, где речь о состоянии позиции,
+  // а не в подсказке «деньги лежат без дела»
+  const wantsAi = al.level === "critical" || al.level === "warning";
+  const verdict = wantsAi
+    ? ai.summary
+      ? '<p class="alert-ai">' + esc(ai.summary) + "</p>" + sidesBlock(ai.pros, ai.cons)
+      : (al.body ? "<p>" + esc(al.body) + "</p>" : "") +
+        '<p class="alert-wait">Итог ASCN появится после разбора</p>'
+    : al.body
+    ? "<p>" + esc(al.body) + "</p>"
+    : "";
   return (
     '<button class="alert-card" data-token="' + esc(al.symbol) + '"><span class="alert-icon" style="background:' + s.bg + ";color:" + s.color + '">' + s.icon + "</span>" +
     '<div style="min-width:0"><span class="eyebrow" style="color:' + s.color + '">' + s.label + "</span>" +
-    "<strong>" + esc(al.title) + "</strong>" + (al.body ? "<p>" + esc(al.body) + "</p>" : "") +
+    "<strong>" + esc(al.title) + "</strong>" + verdict +
     (al.action ? '<em style="color:' + s.color + '">' + esc(al.action) + "</em>" : "") + "</div></button>"
   );
+}
+
+function sidesBlock(pros, cons) {
+  const rows = []
+    .concat((pros || []).slice(0, 2).map((x) => '<p class="p"><i></i>' + esc(x) + "</p>"))
+    .concat((cons || []).slice(0, 2).map((x) => '<p class="c"><i></i>' + esc(x) + "</p>"));
+  return rows.length ? '<div class="card-proscons">' + rows.join("") + "</div>" : "";
 }
 
 function tokenCard(t) {
@@ -297,16 +319,17 @@ function tokenCard(t) {
     .join("");
   const ai = t.ai || {};
   const prosCons =
-    (ai.pros && ai.pros[0]) || (ai.cons && ai.cons[0])
-      ? '<div class="card-proscons">' +
-        (ai.pros && ai.pros[0] ? '<p class="p"><i></i>' + esc(ai.pros[0]) + "</p>" : "") +
-        (ai.cons && ai.cons[0] ? '<p class="c"><i></i>' + esc(ai.cons[0]) + "</p>" : "") +
-        "</div>"
-      : "";
+    ai.summary
+      ? '<p class="card-ai">' + esc(ai.summary) + "</p>" + sidesBlock(ai.pros, ai.cons)
+      : sidesBlock(ai.pros, ai.cons);
   const earn = t.best
     ? '<div class="token-earn"><b class="mono">' + t.best.apy.toFixed(1) + "% в год</b> " + esc(t.best.project) + " " + riskDots(t.best.risk) +
       '<span class="right mono">+' + money(t.potentialYearlyUsd) + "</span></div>"
     : '<div class="token-earn empty">Заработать на нём негде<span class="right">что делать →</span></div>';
+  const cex = t.cexEarn
+    ? '<div class="token-cex">' + esc(t.cexEarn.venue) + " · " + esc(t.cexEarn.kind) +
+      '<b class="mono right">' + t.cexEarn.apy.toFixed(1) + "% в год</b></div>"
+    : "";
 
   return (
     '<button class="token-card" data-token="' + esc(t.symbol) + '"><header>' +
@@ -320,7 +343,7 @@ function tokenCard(t) {
     '<div class="token-chart">' + sparkline((t.market && t.market.sparkline7d) || []) + "</div>" +
     (tags ? '<div class="token-tags">' + tags + "</div>" : "") +
     (inds ? '<div class="ind-row">' + inds + "</div>" : "") +
-    '<div class="token-meta-row">' + riskMeter(t.score) + "</div>" + prosCons + earn + "</button>"
+    '<div class="token-meta-row">' + riskMeter(t.score) + "</div>" + prosCons + earn + cex + "</button>"
   );
 }
 
@@ -494,14 +517,14 @@ async function renderAgentBody() {
   const nx = s.next;
   html +=
     '<div class="card"><div class="card-head"><div><h2>Расписание</h2><p>' +
-    (sch.enabled ? (nx ? "Следующий разбор " + (nx.today ? "сегодня" : "завтра") + " в " + nx.at + " — через " + (nx.inMinutes < 60 ? nx.inMinutes + " мин" : Math.floor(nx.inMinutes / 60) + " ч " + (nx.inMinutes % 60) + " мин") : "Время не выбрано") : "Агент выключен") +
+    (sch.enabled ? (!sch.times.length ? "Только вручную — кнопкой «Запустить разбор»" : nx ? "Следующий разбор " + (nx.today ? "сегодня" : "завтра") + " в " + nx.at + " — через " + (nx.inMinutes < 60 ? nx.inMinutes + " мин" : Math.floor(nx.inMinutes / 60) + " ч " + (nx.inMinutes % 60) + " мин") : "Время не выбрано") : "Агент выключен") +
     '</p></div><label class="switch"><input type="checkbox" id="sch-enabled"' + (sch.enabled ? " checked" : "") + '/><span></span></label></div>' +
     '<div class="card-body"><span class="label">Время запуска · ' + esc(sch.timezone) + "</span>" +
     '<div class="time-list" id="time-list">' +
     sch.times.map((t, i) => '<div class="time-chip"><input type="time" value="' + t + '" data-time-index="' + i + '"/>' + (sch.times.length > 1 ? '<button data-act="time-remove" data-index="' + i + '">✕</button>' : "") + "</div>").join("") +
     (sch.times.length < 8 ? '<button class="time-add" data-act="time-add">＋ Добавить время</button>' : "") + "</div>" +
     '<div class="preset-row"><span>Быстрый выбор:</span>' +
-    [["09:00,21:00", "Утро и вечер"], ["09:00,15:00,21:00", "Три раза"], ["00:00,06:00,12:00,18:00", "Каждые 6 часов"]]
+    [["", "Вручную"], ["09:00", "Раз в день"], ["09:00,21:00", "Два раза в день"], ["09:00,15:00,21:00", "Три раза"], ["00:00,06:00,12:00,18:00", "Каждые 6 часов"]]
       .map(([v, l]) => '<button data-act="preset" data-times="' + v + '" class="' + (sch.times.join(",") === v ? "active" : "") + '">' + l + "</button>")
       .join("") + "</div>" +
     '<label class="checkbox" style="margin-top:16px"><input type="checkbox" id="sch-catchup"' + (sch.catchUp ? " checked" : "") + '/><span>Догонять пропущенное<small>Если машина была выключена — разбор запустится сразу после старта.</small></span></label>' +
@@ -523,6 +546,21 @@ async function renderAgentBody() {
     '<span class="label">Сколько токенов разбирать за прогон</span><div class="preset-row" style="margin-top:10px">' +
     [1, 2, 3, 5].map((n) => '<button data-act="ai-count" data-count="' + n + '" class="' + (s.ai.maxTokensPerRun === n ? "active" : "") + '">' + n + "</button>").join("") +
     "<span>берутся те, где что-то изменилось</span></div>" +
+    '<span class="label" style="display:block;margin-top:18px">Что просить у ассистента</span><div class="preset-row" style="margin:10px 0 0">' +
+    [["summary", "Только итог"], ["full", "Полный разбор"], ["custom", "Свой промпт"]]
+      .map(([v, l]) => '<button data-act="ai-template" data-template="' + v + '" class="' + (s.ai.template === v ? "active" : "") + '">' + l + "</button>")
+      .join("") +
+    "<span>" + (s.ai.template === "summary" ? "2–4 предложения плюс по два факта за и против" : s.ai.template === "full" ? "теханализ, ончейн, сантимент, ликвидации и итог" : "текст задаёте сами") + "</span></div>" +
+    (s.ai.template === "custom"
+      ? '<label class="field" style="margin-top:14px">СВОЙ ПРОМПТ<textarea id="ai-prompt" rows="4" style="padding:10px 11px;border:1px solid var(--line);border-radius:9px;resize:vertical">' +
+        esc(s.ai.customPrompt || "") + "</textarea></label>" +
+        '<button class="primary-button" data-act="ai-prompt-save">Сохранить промпт</button>'
+      : "") +
+    '<span class="label" style="display:block;margin-top:18px">Смотреть X (Twitter)</span><div class="preset-row" style="margin:10px 0 0">' +
+    [["off", "Не смотреть"], ["notable", "Где есть движение"], ["all", "По всем токенам"]]
+      .map(([v, l]) => '<button data-act="ai-social" data-social="' + v + '" class="' + (s.ai.social === v ? "active" : "") + '">' + l + "</button>")
+      .join("") +
+    "<span>X смотрит сам ассистент: своего доступа к нему у дашборда нет</span></div>" +
     '<p class="hint" style="margin-top:14px">Один токен — 3–6 минут ожидания, запросы уходят параллельно. Если важных изменений нет, ИИ не вызывается.</p>' +
     '<div id="ai-note"></div></div></div>';
 
@@ -581,26 +619,96 @@ async function renderAgentBody() {
 
 // ————— дровер токена —————
 
-let drawerTab = "earn";
+function when(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+let drawerTab = "ai";
+let aiHistory = { symbol: null, rows: [], picked: 0, busy: false };
+
+function aiTab(t) {
+  const ai = t.ai || {};
+  const rows = aiHistory.symbol === t.symbol ? aiHistory.rows : [];
+  const picked = rows[aiHistory.picked] || null;
+  const shown = picked || (ai.summary ? ai : null);
+
+  const left = rows.length
+    ? rows
+        .map((r, i) => '<button class="hist-item' + (i === aiHistory.picked ? " active" : "") +
+          '" data-act="ai-pick" data-i="' + i + '"><b>' + when(r.at) + "</b><span>" +
+          esc((r.summary || "").slice(0, 60)) + "…</span></button>")
+        .join("")
+    : '<p class="hint">Разборов пока нет</p>';
+
+  const right = shown
+    ? '<p class="ai-summary">' + esc(shown.summary || "") + "</p>" +
+      (shown.pros && shown.pros.length
+        ? '<div class="ai-side"><span class="eyebrow" style="color:var(--green)">ЗА</span>' +
+          shown.pros.map((x) => "<p>" + esc(x) + "</p>").join("") + "</div>"
+        : "") +
+      (shown.cons && shown.cons.length
+        ? '<div class="ai-side"><span class="eyebrow" style="color:var(--red)">ПРОТИВ</span>' +
+          shown.cons.map((x) => "<p>" + esc(x) + "</p>").join("") + "</div>"
+        : "") +
+      '<p class="hint">' + (shown.at ? "разбор от " + when(shown.at) : "") +
+      (shown.seconds ? " · ассистент отвечал " + Math.round(shown.seconds) + " с" : "") + "</p>"
+    : '<p class="hint">Итог по токену даёт ассистент ASCN. Нажмите «Обновить анализ» — ответ идёт 3–6 минут.</p>';
+
+  return (
+    '<div class="ai-head"><button class="primary" data-act="ai-run" data-symbol="' + esc(t.symbol) + '"' +
+    (aiHistory.busy ? " disabled" : "") + ">" + (aiHistory.busy ? "Разбираю…" : "Обновить анализ") + "</button>" +
+    '<span class="hint">' + (aiHistory.busy ? "ассистент отвечает 3–6 минут, можно закрыть окно" : "по этому токену, вне расписания") + "</span></div>" +
+    '<div class="ai-grid"><div class="ai-hist">' + left + '</div><div class="ai-main">' + right + "</div></div>"
+  );
+}
 
 function openDrawer(symbol) {
   const t = (state.analysis && state.analysis.tokens.find((x) => x.symbol === symbol)) || null;
   if (!t) return;
-  drawerTab = t.verdict === "sell" || t.verdict === "reduce" ? "exit" : "earn";
+  drawerTab = "ai";
+  if (aiHistory.symbol !== symbol) aiHistory = { symbol: symbol, rows: [], picked: 0, busy: false };
   renderDrawer(t);
+  loadAiHistory(symbol);
+}
+
+async function loadAiHistory(symbol) {
+  const res = await api("/api/token/history?symbol=" + encodeURIComponent(symbol));
+  if (!res || aiHistory.symbol !== symbol) return;
+  aiHistory.rows = res.history || [];
+  const t = state.analysis && state.analysis.tokens.find((x) => x.symbol === symbol);
+  if (t && $(".drawer")) renderDrawer(t);
+}
+
+async function runTokenAnalysis(symbol) {
+  aiHistory.busy = true;
+  const t = state.analysis && state.analysis.tokens.find((x) => x.symbol === symbol);
+  if (t) renderDrawer(t);
+  const res = await api("/api/token/analyze", { method: "POST", body: JSON.stringify({ symbol: symbol }) });
+  aiHistory.busy = false;
+  if (res && res.ok) {
+    aiHistory.rows = res.history || [];
+    aiHistory.picked = 0;
+    if (t) t.ai = res.insight;          // карточки подхватят итог без полного пересчёта
+  } else if (res && res.error) {
+    alert("Разбор не получился: " + res.error);
+  }
+  if (t) renderDrawer(t);
+  render();
 }
 
 function renderDrawer(t) {
   const v = VERDICT[t.verdict];
   const m = t.market || {};
   const tabs = [
+    ["ai", "Итог ASCN"],
     ["earn", "Заработать · " + t.opportunities.length],
     ["why", "Разбор"],
     ["profile", "Профиль"],
     ["news", "Новости · " + t.news.length],
     ["exit", "Выход и хедж"],
   ];
-  const body = { earn: earnTab, why: whyTab, profile: profileTab, news: newsTab, exit: exitTab }[drawerTab](t);
+  const body = { ai: aiTab, earn: earnTab, why: whyTab, profile: profileTab, news: newsTab, exit: exitTab }[drawerTab](t);
 
   $("#drawer-root").innerHTML =
     '<div class="overlay" data-act="drawer-close"><aside class="drawer" data-stop="1"><div class="drawer-head">' +
@@ -937,6 +1045,16 @@ document.addEventListener("click", async (e) => {
       if (t) renderDrawer(t);
       break;
     }
+    case "ai-run":
+      runTokenAnalysis(target.dataset.symbol);
+      break;
+    case "ai-pick": {
+      aiHistory.picked = Number(target.dataset.i);
+      const sym = aiHistory.symbol;
+      const tok = state.analysis.tokens.find((x) => x.symbol === sym);
+      if (tok) renderDrawer(tok);
+      break;
+    }
     case "pick":
       editor.search = Number(target.dataset.index);
       renderEditor();
@@ -1041,6 +1159,20 @@ document.addEventListener("click", async (e) => {
       note("ai-note", res.ok ? "Ключ работает: ассистент " + res.model + " ответил за " + res.seconds + " с" : "Ключ не подошёл: " + res.error, res.ok);
       break;
     }
+    case "ai-template":
+      await api("/api/settings", { method: "POST", body: JSON.stringify({ ai: { template: target.dataset.template } }) });
+      renderAgentBody();
+      break;
+    case "ai-social":
+      await api("/api/settings", { method: "POST", body: JSON.stringify({ ai: { social: target.dataset.social } }) });
+      renderAgentBody();
+      break;
+    case "ai-prompt-save": {
+      const box = $("#ai-prompt");
+      await api("/api/settings", { method: "POST", body: JSON.stringify({ ai: { customPrompt: box ? box.value : "" } }) });
+      renderAgentBody();
+      break;
+    }
     case "ai-count":
       await api("/api/settings", { method: "POST", body: JSON.stringify({ ai: { maxTokensPerRun: Number(target.dataset.count) } }) });
       renderAgentBody();
@@ -1050,7 +1182,7 @@ document.addEventListener("click", async (e) => {
       renderAgentBody();
       break;
     case "preset":
-      await saveSchedule({ times: target.dataset.times.split(",") });
+      await saveSchedule({ times: target.dataset.times ? target.dataset.times.split(",") : [] });
       break;
     case "time-add":
       await saveSchedule({ times: state.settings.schedule.times.concat(["12:00"]) });

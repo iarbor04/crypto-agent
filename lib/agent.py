@@ -127,7 +127,18 @@ def ascn_credentials() -> Dict[str, str]:
     return {"apiKey": ai["apiKey"], "model": ai["model"]}
 
 
-def build_token_prompt(token: Dict[str, Any], market_note: str) -> str:
+# Шаблоны разбора. «Итог» — по умолчанию: коротко, с привязкой к прошлому выводу.
+# «Полный» — четыре раздела, когда нужен разбор целиком.
+TEMPLATES = {
+    "summary": {"title": "Только итог", "what": "2-4 предложения плюс по два факта за и против"},
+    "full": {"title": "Полный разбор", "what": "теханализ, ончейн, сантимент, ликвидации и итог"},
+    "custom": {"title": "Свой промпт", "what": "текст задаёте сами"},
+}
+
+
+def build_token_prompt(token: Dict[str, Any], market_note: str,
+                       template: str = "summary", previous: Optional[Dict[str, Any]] = None,
+                       social: bool = False, custom: str = "") -> str:
     m = token.get("market") or {}
     ind = token.get("indicators") or {}
     contract = ((token.get("meta") or {}).get("chains") or [{}])[0] if token.get("meta") else {}
@@ -167,6 +178,50 @@ def build_token_prompt(token: Dict[str, Any], market_note: str) -> str:
     lines += ["- " + f for f in facts if f]
     if market_note:
         lines.append("- по рынку: " + market_note)
+
+    if previous and previous.get("summary"):
+        lines += [
+            "",
+            "Прошлый вывод от %s: «%s»" % (previous.get("at", "")[:16].replace("T", " "), previous["summary"][:400]),
+        ]
+
+    if social:
+        handle = ((token.get("meta") or {}).get("twitter") or "").rstrip("/").rsplit("/", 1)[-1]
+        lines += [
+            "",
+            "Отдельно посмотри X (Twitter)%s:" % ((" — официальный аккаунт @" + handle) if handle else ""),
+            "- о чём говорят последние сутки: тема, тон, кто именно пишет",
+            "- заявления команды и их даты",
+            "- рост или спад внимания против обычного уровня",
+            "- если ничего значимого — скажи одной фразой, без домыслов",
+        ]
+
+    if template == "custom" and custom.strip():
+        lines += ["", custom.strip()]
+        return "\n".join(lines)
+
+    if template == "summary":
+        lines += [
+            "",
+            "Верни только итог, без разделов и без markdown-таблиц.",
+            "",
+            "ИТОГ:",
+            "- 2-4 предложения подряд, одним абзацем",
+            "- если прошлый вывод приведён выше, начни с того, подтверждается он или изменился, и чем именно",
+            "- дальше главная причина текущего состояния: конкретика, числа, а не общие слова",
+            "- если за последние сутки случилось срочное (взлом, делистинг, разлок, уход команды,",
+            "  остановка выводов, обвал ликвидности) — скажи об этом первым предложением",
+            "- если ничего существенного не изменилось, так и напиши одной фразой",
+            "",
+            "ЗА:",
+            "- до двух фактов с числами, каждый не длиннее 15 слов",
+            "ПРОТИВ:",
+            "- до двух фактов с числами, каждый не длиннее 15 слов",
+            "",
+            "Максимум 140 слов на всё.",
+        ]
+        return "\n".join(lines)
+
     lines += [
         "",
         "Дай четыре раздела, в каждом только конкретика с числами:",
@@ -207,6 +262,10 @@ def build_token_prompt(token: Dict[str, Any], market_note: str) -> str:
         "- факт с числом",
         "- факт с числом",
         "- факт с числом",
+        "",
+        "ИТОГ:",
+        "- 2-4 предложения одним абзацем: что главное сейчас и изменился ли прошлый вывод",
+        "- если случилось срочное, скажи об этом первым предложением",
         "",
         "Важно: не давай рекомендаций и не советуй покупать, продавать, сокращать или держать.",
         "Только факты и их следствия — решение читатель примет сам. Если данных нет, так и напиши.",
@@ -259,11 +318,13 @@ def parse_pros_cons(content: str) -> Dict[str, List[str]]:
     """Два списка фактов из ответа: по ним карточки показывают плюсы и минусы."""
 
     def grab(heading: str) -> List[str]:
-        m = re.search(r"(?:\*\*)?%s(?:\*\*)?\s*:?" % heading, content, re.I)
+        # заголовок только с начала строки: короткие «ЗА»/«ПРОТИВ» иначе
+        # находятся внутри обычного текста
+        m = re.search(r"(?:^|\n)\s*(?:\*\*)?%s(?:\*\*)?\s*:?" % heading, content, re.I)
         if not m:
             return []
         tail = content[m.end():]
-        stop = re.search(r"\n\s*(?:\*\*)?(?:ЧТО ПРОТИВ|ЧТО ЗА|РЕШЕНИЕ|ИТОГ|ВЫВОД)", tail, re.I)
+        stop = re.search(r"\n\s*(?:\*\*)?(?:ЧТО ПРОТИВ|ЧТО ЗА|ПРОТИВ|ЗА|РЕШЕНИЕ|ИТОГ|ВЫВОД)\b", tail, re.I)
         block = tail[: stop.start()] if stop else tail
         lines = []
         for raw in block.split("\n"):
@@ -279,7 +340,108 @@ def parse_pros_cons(content: str) -> Dict[str, List[str]]:
                 flat.append(line)
         return [re.sub(r"^[-*•·\s]+", "", f).strip() for f in flat][:4]
 
-    return {"pros": grab("ЧТО ЗА ПОЗИЦИЮ"), "cons": grab("ЧТО ПРОТИВ")}
+    pros = grab("ЧТО ЗА ПОЗИЦИЮ") or grab("ЗА")
+    cons = grab("ЧТО ПРОТИВ") or grab("ПРОТИВ")
+    return {"pros": pros, "cons": cons, "summary": parse_summary(content)}
+
+
+def parse_summary(content: str) -> str:
+    """Краткий итог: то, что показывается в карточке и уходит в сводку."""
+    m = re.search(r"(?:\*\*)?(?:ИТОГ|ВЫВОД)(?:\*\*)?\s*:?\s*", content or "", re.I)
+    if m:
+        tail = content[m.end():]
+        stop = re.search(r"\n\s*(?:\*\*)?(?:ЗА|ПРОТИВ|ЧТО ЗА|ЧТО ПРОТИВ)\b", tail)
+        block = tail[: stop.start()] if stop else tail
+    else:
+        # шаблон «только итог» может ответить без заголовка — берём первый абзац
+        block = (content or "").split("\n\n")[0]
+    text = re.sub(r"^[\s>*•·-]+", "", block.replace("**", "")).strip()
+    text = re.sub(r"\s*\n\s*", " ", text)
+    return text[:700]
+
+
+HISTORY_LIMIT = 20
+
+
+def _wants_social(ai: Dict[str, Any], token: Dict[str, Any]) -> bool:
+    """X смотрим не по всем токенам: «notable» — только там, где что-то происходит."""
+    mode = ai.get("social") or "notable"
+    if mode == "off":
+        return False
+    if mode == "all":
+        return True
+    critical = bool([r for r in (token.get("reasons") or []) if r.get("weight", 0) <= -12])
+    return token.get("score", 100) <= 45 or critical
+
+
+def last_insight(symbol: str) -> Optional[Dict[str, Any]]:
+    """Последний разбор токена — нужен, чтобы новый вывод спорил с прошлым."""
+    saved = (store.read_json("ai-insights.json", {}) or {}).get(symbol.upper())
+    return saved if isinstance(saved, dict) else None
+
+
+def insight_history(symbol: str) -> List[Dict[str, Any]]:
+    rows = (store.read_json("ai-history.json", {}) or {}).get(symbol.upper()) or []
+    return rows if isinstance(rows, list) else []
+
+
+def save_insight(symbol: str, content: str, template: str = "summary", seconds: Optional[float] = None) -> Dict[str, Any]:
+    """Пишем разбор в две книги: последнее состояние и историю по токену."""
+    parsed = parse_pros_cons(content)
+    entry = {
+        "at": _now(),
+        "summary": parsed["summary"],
+        "pros": parsed["pros"],
+        "cons": parsed["cons"],
+        "content": content,
+        "template": template,
+        "seconds": seconds,
+    }
+    key = symbol.upper()
+
+    def put_last(cur):
+        cur = cur or {}
+        cur[key] = entry
+        return cur
+
+    def put_history(cur):
+        cur = cur or {}
+        rows = cur.get(key) or []
+        # в истории храним только сжатое: полный текст живёт в последнем разборе
+        rows.insert(0, {k: entry[k] for k in ("at", "summary", "pros", "cons", "template", "seconds")})
+        cur[key] = rows[:HISTORY_LIMIT]
+        return cur
+
+    store.update_json("ai-insights.json", {}, put_last)
+    store.update_json("ai-history.json", {}, put_history)
+    return entry
+
+
+def analyze_one(symbol: str) -> Dict[str, Any]:
+    """Разбор одного токена по кнопке в карточке."""
+    settings = get_settings()
+    creds = ascn_credentials()
+    if not creds["apiKey"]:
+        return {"error": "Ключ ASCN не задан", "_status": 400}
+    analysis = analyze_portfolio()
+    token = next((t for t in (analysis.get("tokens") or []) if t["symbol"].upper() == symbol.upper()), None)
+    if not token:
+        return {"error": "Токена %s нет в портфеле" % symbol, "_status": 404}
+    fg = (analysis.get("context") or {}).get("fearGreed")
+    market_note = ("индекс страха и жадности %d/100 (%s)" % (fg["value"], fg["label"])) if fg else ""
+    ai = settings["ai"]
+    prompt = build_token_prompt(
+        token, market_note,
+        template=ai.get("template") or "summary",
+        previous=last_insight(symbol),
+        social=_wants_social(ai, token),
+        custom=ai.get("customPrompt") or "",
+    )
+    res = ask_ascn(prompt, token["symbol"], creds)
+    if not res.get("content"):
+        return {"error": res.get("error") or "Ассистент не ответил", "_status": 502}
+    entry = save_insight(token["symbol"], res["content"], ai.get("template") or "summary", res.get("seconds"))
+    return {"ok": True, "symbol": token["symbol"], "insight": entry, "history": insight_history(token["symbol"])}
 
 
 def markdown_to_telegram(md: str) -> str:
@@ -500,8 +662,17 @@ def run_agent(trigger: str = "manual") -> Dict[str, Any]:
         lock = threading.Lock()
         done = [0]
 
+        template = settings["ai"].get("template") or "summary"
+
         def work(token):
-            res = ask_ascn(build_token_prompt(token, market_note), token["symbol"], creds)
+            prompt = build_token_prompt(
+                token, market_note,
+                template=template,
+                previous=last_insight(token["symbol"]),
+                social=_wants_social(settings["ai"], token),
+                custom=settings["ai"].get("customPrompt") or "",
+            )
+            res = ask_ascn(prompt, token["symbol"], creds)
             with lock:
                 done[0] += 1
                 ai_results.append(res)
@@ -514,20 +685,8 @@ def run_agent(trigger: str = "manual") -> Dict[str, Any]:
             t.join(ASCN_TIMEOUT + 30)
 
     fresh = [r for r in ai_results if r.get("content")]
-    if fresh:
-        def mutate(cur):
-            cur = cur or {}
-            for r in fresh:
-                parsed = parse_pros_cons(r["content"])
-                cur[r["symbol"].upper()] = {
-                    "at": _now(),
-                    "pros": parsed["pros"],
-                    "cons": parsed["cons"],
-                    "content": r["content"],
-                }
-            return cur
-
-        store.update_json("ai-insights.json", {}, mutate)
+    for r in fresh:
+        save_insight(r["symbol"], r["content"], settings["ai"].get("template") or "summary", r.get("seconds"))
 
     _update_job({"step": "отправляю в Telegram"})
     digest = build_digest(analysis, unique, prev)

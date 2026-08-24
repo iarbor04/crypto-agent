@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from . import market as market_mod
 from . import sources, store
+from .net import run_parallel
 from .news import get_news
 from .score import risk_level, score_token
 from .settings import get_portfolio, get_settings
@@ -207,6 +208,21 @@ def analyze_portfolio() -> Dict[str, Any]:
 
     _soft("профили токенов", min(40, left()), load_metas, metas, warnings)
 
+    # Ликвидность независима по токенам, а DexScreener отвечает медленно.
+    # Тянем всё разом: четыре токена — это восемь секунд, а не тридцать два.
+    liquidities: Dict[str, Any] = {}
+
+    def load_liquidity():
+        tasks = {}
+        for i, h in enumerate(holdings):
+            meta = metas.get(ids[i]) if ids[i] else None
+            contract = ((meta or {}).get("chains") or [{}])[0].get("address") if meta else None
+            tasks[h["symbol"]] = lambda s=h["symbol"], c=contract: sources.get_liquidity(s, c)
+        liquidities.update(run_parallel(tasks, timeout=22))
+        return liquidities
+
+    _soft("стакан и DEX", min(25, left()), load_liquidity, liquidities, warnings)
+
     tokens: List[Dict[str, Any]] = []
     for i, h in enumerate(holdings):
         coin_id = ids[i]
@@ -220,8 +236,9 @@ def analyze_portfolio() -> Dict[str, Any]:
         )
         meta = metas.get(coin_id) if coin_id else None
         contract = ((meta or {}).get("chains") or [{}])[0].get("address") if meta else None
-        liquidity = _soft("стакан и DEX", min(20, left()), lambda s=h["symbol"], c=contract: sources.get_liquidity(s, c), None, warnings)
+        liquidity = liquidities.get(h["symbol"])
         indicators = _soft("индикаторы", min(20, left()), lambda s=h["symbol"]: sources.get_indicators(s), None, warnings)
+        cex_earn = _soft("вклады на биржах", min(12, left()), lambda s=h["symbol"]: sources.get_cex_earn(s), None, warnings)
 
         best = sources.pick_safe(opportunities)
         token_hacks = sources.find_hacks(all_hacks, (meta or {}).get("name") or (mkt or {}).get("name") or h["symbol"])[:3]
@@ -252,6 +269,7 @@ def analyze_portfolio() -> Dict[str, Any]:
             "indicators": indicators,
             "indicatorsRead": sources.read_indicators(indicators) if indicators else [],
             "ai": _read_insight(h["symbol"]),
+            "cexEarn": cex_earn,
             "funding": (context.get("funding") or {}).get(h["symbol"]),
             "hacks": token_hacks,
             "valueUsd": value_usd,

@@ -166,6 +166,9 @@ def score_token(
 
     # 4. Новости (18) — только свежие: поиск поднимает статьи трёхлетней давности
     fresh = [n for n in news if n.get("ageDays") is not None and n["ageDays"] <= 14]
+    # В оценку идут только новости, где монета — предмет заголовка. Упоминания
+    # в тексте показываем, но чужой взлом не должен ронять оценку монеты.
+    fresh = [n for n in fresh if n.get("subject", True)]
     tones = [n["tone"] for n in fresh]
     worst = min(tones) if tones else 0
     best_tone = max(tones) if tones else 0

@@ -22,7 +22,11 @@ def _server_timezone() -> str:
 def _normalize_schedule(raw: Dict[str, Any]) -> Dict[str, Any]:
     raw = raw or {}
     times = [t for t in (raw.get("times") or []) if isinstance(t, str) and TIME_RE.match(t)]
-    times = sorted(set(times))[:8] or ["09:00", "21:00"]
+    times = sorted(set(times))[:8]
+    # Пустой список — это режим «вручную», а не отсутствие настройки.
+    # Значения по умолчанию подставляем только когда о временах вообще не спрашивали.
+    if not times and "times" not in raw:
+        times = ["09:00", "21:00"]
     return {
         "enabled": bool(raw.get("enabled", True)),
         "times": times,
@@ -45,6 +49,11 @@ def get_settings() -> Dict[str, Any]:
             "maxTokensPerRun": max(0, min(int(ai.get("maxTokensPerRun") or 3), 8)),
             "apiKey": ai.get("apiKey") or os.environ.get("ASCN_API_KEY", ""),
             "model": ai.get("model") or os.environ.get("ASCN_MODEL", "ascn_v1.2"),
+            "template": ai.get("template") if ai.get("template") in ("summary", "full", "custom") else "summary",
+            "customPrompt": ai.get("customPrompt") or "",
+            # X смотрит сам ассистент: своего доступа к нему у нас нет.
+            # notable — только по токенам, где что-то происходит.
+            "social": ai.get("social") if ai.get("social") in ("off", "notable", "all") else "notable",
         },
     }
 
@@ -77,6 +86,12 @@ def save_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
                 ),
                 "apiKey": (ai_patch.get("apiKey") or "").strip() or ai_cur.get("apiKey", ""),
                 "model": (ai_patch.get("model") or "").strip() or ai_cur.get("model", "ascn_v1.2"),
+                "template": ai_patch.get("template") if ai_patch.get("template") in ("summary", "full", "custom")
+                else ai_cur.get("template", "summary"),
+                "customPrompt": ai_patch.get("customPrompt") if isinstance(ai_patch.get("customPrompt"), str)
+                else ai_cur.get("customPrompt", ""),
+                "social": ai_patch.get("social") if ai_patch.get("social") in ("off", "notable", "all")
+                else ai_cur.get("social", "notable"),
             }
         return out
 

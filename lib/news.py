@@ -213,6 +213,9 @@ def get_news(symbol: str, name: Optional[str] = None, limit: int = 6) -> List[Di
             except Exception:
                 age_days = None
         scored["ageDays"] = age_days
+        # Монета в заголовке — новость про неё. Только в тексте — это упоминание:
+        # «взломали Term Finance, вынесли Ethereum-депозиты» не делает ETH взломанным.
+        scored["subject"] = _mentions(n["title"], symbol, name)
         unique.append(scored)
 
     def sort_key(n: Dict[str, Any]):

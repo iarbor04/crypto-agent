@@ -427,3 +427,30 @@ a { color: inherit; text-decoration: none; }
   .page-header h1 { font-size: 26px; }
   .hero-value { font-size: 27px; }
 }
+
+/* ————— Итог ASCN: карточки, вкладка разбора, история ————— */
+.alert-ai { margin: 6px 0 0; color: #3f485a; font-size: 11.5px; line-height: 1.5; }
+.alert-wait { margin: 6px 0 0; color: var(--muted); font-size: 10.5px; }
+.card-ai { margin: 10px 0 0; padding-top: 10px; border-top: 1px solid #edf0f4; color: #3f485a; font-size: 11px; line-height: 1.5; }
+.token-cex { display: flex; align-items: center; gap: 6px; margin-top: 7px; padding-top: 8px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 10.5px; }
+.token-cex .right { margin-left: auto; color: var(--ink); }
+
+.ai-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.ai-head button.primary { height: 36px; padding: 0 16px; border: 0; border-radius: 9px; background: var(--blue); color: #fff; font-size: 12px; font-weight: 600; }
+.ai-head button.primary:hover:not(:disabled) { background: var(--blue-dark); }
+.ai-head button.primary:disabled { opacity: .6; }
+.ai-grid { display: grid; grid-template-columns: 190px 1fr; gap: 18px; align-items: start; }
+.ai-hist { display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; }
+.hist-item { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: #fff; text-align: left; }
+.hist-item b { color: var(--ink); font-size: 10.5px; font-weight: 600; }
+.hist-item span { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.hist-item.active { border-color: var(--blue); background: var(--blue-soft); }
+.ai-main .ai-summary { margin: 0 0 14px; color: var(--ink); font-size: 13px; line-height: 1.6; }
+.ai-side { margin-bottom: 12px; }
+.ai-side p { margin: 5px 0 0; color: #4a5365; font-size: 11.5px; line-height: 1.45; }
+
+@media (max-width: 720px) {
+  .ai-grid { grid-template-columns: 1fr; }
+  .ai-hist { flex-direction: row; overflow-x: auto; max-height: none; }
+  .hist-item { flex: 0 0 160px; }
+}
