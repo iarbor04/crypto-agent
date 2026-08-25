@@ -342,6 +342,26 @@ def snapshot_age_minutes() -> Optional[float]:
     return (time.time() - stamp) / 60
 
 
+def _with_fresh_insights(saved: Dict[str, Any]) -> Dict[str, Any]:
+    """Разбор по кнопке пишется в ai-insights.json, а снимок живёт до 30 минут.
+    Без этой подстановки карточка в списке показывала бы прошлый разбор, пока
+    снимок не пересчитается, — при том что в шторке уже виден новый."""
+    tokens = saved.get("tokens")
+    if not isinstance(tokens, list):
+        return saved
+    patched = []
+    changed = False
+    for token in tokens:
+        fresh = _read_insight(token.get("symbol") or "")
+        if fresh and token.get("ai") != fresh:
+            token = dict(token, ai=fresh)
+            changed = True
+        patched.append(token)
+    if not changed:
+        return saved
+    return dict(saved, tokens=patched)
+
+
 def analysis_for_page(force: bool = False) -> Dict[str, Any]:
     """Что отдавать в браузер: свежий снимок сразу, устаревший — тоже сразу,
     но с пометкой и фоновым пересчётом. Считаем синхронно только когда
@@ -353,7 +373,7 @@ def analysis_for_page(force: bool = False) -> Dict[str, Any]:
 
     limit = saved.get("refreshMinutes") or 30
     if age <= limit:
-        return saved
+        return _with_fresh_insights(saved)
 
     if _refreshing.acquire(blocking=False):
         def work():
@@ -363,7 +383,7 @@ def analysis_for_page(force: bool = False) -> Dict[str, Any]:
                 _refreshing.release()
 
         threading.Thread(target=work, daemon=True).start()
-    out = dict(saved)
+    out = dict(_with_fresh_insights(saved))
     out["stale"] = True
     out["ageMinutes"] = round(age, 1)
     return out

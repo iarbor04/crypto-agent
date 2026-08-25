@@ -402,7 +402,12 @@ class Handler(BaseHTTPRequestHandler):
                    {"Set-Cookie": auth.clear_cookie_header(self._secure_link())})
 
     def log_message(self, fmt: str, *args: Any) -> None:  # тише в консоли
-        if "/api/" in (args[0] if args else ""):
+        # Сюда же приходит log_error, а он зовётся и с объектом исключения:
+        # keep-alive-сокет отваливается по таймауту, и в args[0] лежит
+        # socket.timeout, а не строка. Без str() тут падал TypeError и уносил
+        # с собой поток обработки соединения.
+        first = str(args[0]) if args else ""
+        if "/api/" in first:
             sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
 
     # ————— вспомогательное —————

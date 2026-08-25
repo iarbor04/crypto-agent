@@ -64,7 +64,12 @@ _ssl_context = ssl.create_default_context()
 
 class HttpError(Exception):
     def __init__(self, status: int, url: str, body: str = ""):
-        super().__init__("HTTP %s: %s" % (status, url.split("?")[0]))
+        # status 0 — это не ответ сервера, а обрыв или таймаут: причина лежит
+        # в body, и без неё сообщение «HTTP 0: <url>» не объясняет ничего
+        message = "HTTP %s: %s" % (status, url.split("?")[0])
+        if status == 0 and body:
+            message += " — " + body[:200]
+        super().__init__(message)
         self.status = status
         self.url = url
         self.body = body

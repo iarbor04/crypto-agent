@@ -9,14 +9,14 @@ import time
 import urllib.parse
 from typing import Any, Dict, List, Optional
 
-from . import store, xapi
+from . import store
 from .analyze import analyze_portfolio
 from .net import fetch_json
 from .score import risk_level
 from .settings import get_settings
 
 ASCN_BASE = "https://b2b.api.ascn.ai"
-ASCN_TIMEOUT = 8 * 60
+ASCN_TIMEOUT = 15 * 60
 
 
 def _money(n: float) -> str:
@@ -130,154 +130,48 @@ def ascn_credentials() -> Dict[str, str]:
 # Шаблоны разбора. «Итог» — по умолчанию: коротко, с привязкой к прошлому выводу.
 # «Полный» — четыре раздела, когда нужен разбор целиком.
 TEMPLATES = {
-    "summary": {"title": "Только итог", "what": "2-4 предложения плюс по два факта за и против"},
-    "full": {"title": "Полный разбор", "what": "теханализ, ончейн, сантимент, ликвидации и итог"},
+    "summary": {"title": "Только итог", "what": "тот же анализ, но не длиннее 150 слов"},
+    "full": {"title": "Полный разбор", "what": "анализ монеты за сутки и неделю плюс перспективы"},
     "custom": {"title": "Свой промпт", "what": "текст задаёте сами"},
 }
 
 
-def build_token_prompt(token: Dict[str, Any], market_note: str,
-                       template: str = "full", previous: Optional[Dict[str, Any]] = None,
-                       social: bool = False, custom: str = "") -> str:
-    m = token.get("market") or {}
-    ind = token.get("indicators") or {}
-    contract = ((token.get("meta") or {}).get("chains") or [{}])[0] if token.get("meta") else {}
-    liq = token.get("liquidity") or {}
+def build_token_prompt(token: Dict[str, Any], template: str = "full", custom: str = "") -> str:
+    """Запрос ассистенту, написанный от цели, а не от формата.
 
-    facts = [
-        "позиция %s, это %.1f%% портфеля" % (_money(token["valueUsd"]), token["share"]),
-        ("цена $%.6g, за 24ч %s, за 7д %s, за 30д %s, за год %s"
-         % (m.get("price") or 0, _sign(m.get("change24h") or 0), _sign(m.get("change7d") or 0),
-            _sign(m.get("change30d") or 0), _sign(m.get("change1y") or 0))) if m else "рыночных данных нет",
-        ("капитализация %s, объём %s в сутки" % (_money(m.get("marketCap") or 0), _money(m.get("volume24h") or 0))) if m else "",
-        ("ёмкость выхода %s, DEX-ликвидность %s" % (_money(liq.get("sellCapacityUsd") or 0), _money(liq.get("dexTotalUsd") or 0))) if liq else "",
-        ("плата за плечо %d%% в год" % (token["funding"] * 3 * 365 * 100)) if token.get("funding") is not None else "фьючерса на Binance нет",
-        ("доступный стейкинг: %.1f%% в %s (риск %d/5)" % (token["best"]["apy"], token["best"]["project"], token["best"]["risk"])) if token.get("best") else "надёжного стейкинга нет",
-        ("взлом %s на %s (%s)" % (token["hacks"][0]["date"], _money(token["hacks"][0]["amountUsd"]), token["hacks"][0]["technique"])) if token.get("hacks") else "",
-        ("индикаторы: RSI %s, цена %s средней за 50 дней, средняя за 50 %s годовой, дневной размах %.1f%%, в месячном коридоре %d%% пути от минимума"
-         % (round(ind["rsi14"]) if ind.get("rsi14") else "н/д",
-            "выше" if ind.get("aboveSma50") else "ниже",
-            "выше" if ind.get("goldenCross") else "ниже",
-            ind.get("atrPct") or 0,
-            ind.get("rangePosition") or 0)) if ind else "",
-        "моя оценка риска: %s (%d/100 по внутренней шкале)" % (risk_level(token["score"])["short"], token["score"]),
-        "; ".join(r["text"] for r in token["reasons"] if r["kind"] == "bad")[:400],
-    ]
+    Формулируем, кто читатель и что ему нужно понять; чем именно это раскрывать —
+    решает ассистент. Предписанные разделы пробовались и заставляли писать абзацы
+    про недоступные данные; голый «сделай анализ» уводил в пересказ метрик, которые
+    и так на экране. Единственное, что задано жёстко, — запрет рекомендаций
+    (принцип продукта из AGENTS.md) и короткий вывод текстом, который читают
+    в списке позиций.
+    """
+    m = token.get("market") or {}
+    contract = ((token.get("meta") or {}).get("chains") or [{}])[0] if token.get("meta") else {}
+    name = (token.get("meta") or {}).get("name") or m.get("name") or token["symbol"]
+    where = (" (%s, контракт %s в сети %s)" % (name, contract.get("address"), contract.get("chain"))
+             if contract.get("address") else " (%s)" % name)
 
     lines = [
-        "Разбери токен %s (%s%s)."
-        % (
-            token["symbol"],
-            (token.get("meta") or {}).get("name") or m.get("name") or token["symbol"],
-            (", контракт %s в сети %s" % (contract.get("address"), contract.get("chain"))) if contract.get("address") else "",
-        ),
-        "Читатель — опытный трейдер: ему нужны цифры, адреса, уровни и даты, а не общие слова.",
+        "Помоги держателю монеты %s%s понять, что с ней происходит и чего ждать дальше."
+        % (token["symbol"], where),
         "",
-        "Что уже посчитано у меня — не пересказывай, а опирайся:",
+        "Цена, изменения за сутки, неделю и месяц, объём, капитализация, RSI и глубина",
+        "стакана у него уже на экране — повторять их незачем. Ему нужно то, чего там нет:",
+        "что движет монетой прямо сейчас, что изменилось за сутки и за неделю, какие",
+        "события, разлоки и решения команды впереди, какие риски и какие перспективы.",
+        "Читатель — опытный трейдер: пиши числами, датами, адресами и источниками.",
+        "",
+        "Не давай рекомендаций: не советуй покупать, продавать, сокращать или держать —",
+        "решение он принимает сам.",
+        "Заверши коротким выводом в 2-3 предложения обычным текстом, не таблицей.",
     ]
-    lines += ["- " + f for f in facts if f]
-    if market_note:
-        lines.append("- по рынку: " + market_note)
-
-    if previous and previous.get("summary"):
-        lines += [
-            "",
-            "Прошлый вывод от %s: «%s»" % (previous.get("at", "")[:16].replace("T", " "), previous["summary"][:400]),
-        ]
-
-    if social:
-        handle = ((token.get("meta") or {}).get("twitter") or "").rstrip("/").rsplit("/", 1)[-1]
-        posts = xapi.digest(handle) if (handle and xapi.configured()) else None
-        if posts:
-            lines += ["", "Последние посты @%s (из официального X API):" % handle, posts]
-        lines += [
-            "",
-            "Отдельно посмотри X (Twitter)%s:" % ((" — официальный аккаунт @" + handle) if handle else ""),
-            "- о чём говорят последние сутки: тема, тон, кто именно пишет",
-            "- заявления команды и их даты",
-            "- рост или спад внимания против обычного уровня",
-            "- если ничего значимого — скажи одной фразой, без домыслов",
-        ]
-
-    if template == "custom" and custom.strip():
-        lines += ["", custom.strip()]
-        return "\n".join(lines)
-
     if template == "summary":
-        lines += [
-            "",
-            "Верни только итог, без разделов и без markdown-таблиц.",
-            "",
-            "ИТОГ:",
-            "- 2-4 предложения подряд, одним абзацем",
-            "- если прошлый вывод приведён выше, начни с того, подтверждается он или изменился, и чем именно",
-            "- дальше главная причина текущего состояния: конкретика, числа, а не общие слова",
-            "- если за последние сутки случилось срочное (взлом, делистинг, разлок, уход команды,",
-            "  остановка выводов, обвал ликвидности) — скажи об этом первым предложением",
-            "- если ничего существенного не изменилось, так и напиши одной фразой",
-            "",
-            "Оба списка ниже обязательны — их читают в карточке токена.",
-            "Если аргументов на стороне нет, напиши в этом списке одну строку «- нет».",
-            "",
-            "ЗА:",
-            "- один-два факта с числами, каждый не длиннее 15 слов",
-            "ПРОТИВ:",
-            "- один-два факта с числами, каждый не длиннее 15 слов",
-            "",
-            "Максимум 140 слов на всё.",
-        ]
-        return "\n".join(lines)
-
-    lines += [
-        "",
-        "Дай четыре раздела, в каждом только конкретика с числами:",
-        "",
-        "1) ТЕХНИЧЕСКИЙ АНАЛИЗ",
-        "- что говорят индикаторы выше и что добавить: дивергенции, сжатие волатильности, объёмный профиль",
-        "- ближайшие поддержки и сопротивления с ценами и числом тестов",
-        "- структура тренда: выше или ниже предыдущих минимумов и максимумов",
-        "",
-        "2) ОНЧЕЙН",
-        "- чистый поток на биржи и с бирж за 24ч и 7д, в долларах и во сколько раз это выше обычного",
-        "- что делали крупные адреса и смарт-мани: суммы, адреса или метки",
-        "- доля свежих кошельков в покупках — это спрос или раздача с одних рук",
-        "- изменение концентрации у топ-холдеров, движения из вестинга и в стейкинг",
-        "- где живёт ликвидность: CEX против DEX",
-        "",
-        "3) САНТИМЕНТ",
-        "- внимание и настроение: растёт или гаснет, есть ли перекос",
-        "- сила или слабость против BTC, ETH и своего сектора за 24ч, 7д, 30д",
-        "- открытый интерес и его изменение, базис спот-фьючерс",
-        "- новости последних 24-48 часов с датами и источниками",
-        "- разлоки впереди: даты и объёмы в процентах от оборота",
-        "- если значимого не было, так и напиши, без домыслов",
-        "",
-        "4) ЛИКВИДАЦИИ",
-        "- сколько ликвидировано за 24ч, отдельно лонги и шорты",
-        "- кластеры ликвидаций: цены и объёмы, насколько далеко от текущей цены",
-        "- ставка фондирования и что она говорит о перегреве",
-        "- какой уровень запускает каскад",
-        "",
-        "В конце два списка фактов. Каждый пункт с новой строки, начинается с дефиса,",
-        "содержит конкретное число и не длиннее 15 слов. Ровно в таком виде:",
-        "ЧТО ЗА ПОЗИЦИЮ:",
-        "- факт с числом",
-        "- факт с числом",
-        "- факт с числом",
-        "ЧТО ПРОТИВ:",
-        "- факт с числом",
-        "- факт с числом",
-        "- факт с числом",
-        "",
-        "ИТОГ:",
-        "- 2-4 предложения одним абзацем: что главное сейчас и изменился ли прошлый вывод",
-        "- если случилось срочное, скажи об этом первым предложением",
-        "",
-        "Важно: не давай рекомендаций и не советуй покупать, продавать, сокращать или держать.",
-        "Только факты и их следствия — решение читатель примет сам. Если данных нет, так и напиши.",
-        "Максимум 300 слов, без markdown-таблиц.",
-    ]
-    return "\n".join(lines)
+        lines.append("Уложись в 150 слов.")
+    prompt = "\n".join(lines)
+    if template == "custom" and custom.strip():
+        return prompt + "\n\n" + custom.strip()
+    return prompt
 
 
 def ask_ascn(message: str, symbol: str = "", creds: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
@@ -320,7 +214,7 @@ def ask_ascn(message: str, symbol: str = "", creds: Optional[Dict[str, str]] = N
     return {"symbol": symbol, "content": res["content"], "error": None, "seconds": elapsed()}
 
 
-SECTION_RE = re.compile(r"(?<!\n)[ \t]*\*{0,2}\b(ЧТО ЗА ПОЗИЦИЮ|ЧТО ПРОТИВ|ПРОТИВ|ЗА|ИТОГ|ВЫВОД)\*{0,2}[ \t]*:")
+SECTION_RE = re.compile(r"(?<!\n)[ \t]*\*{0,2}\b(ЧТО ЗА ПОЗИЦИЮ|ЧТО ПРОТИВ|ПРОТИВ|ЗА|ИТОГ|ВЫВОД|КОРОТКО)\*{0,2}[ \t]*:")
 
 
 def _normalize_sections(content: str) -> str:
@@ -337,29 +231,37 @@ def parse_pros_cons(content: str) -> Dict[str, List[str]]:
     def grab(heading: str) -> List[str]:
         # заголовок только с начала строки: короткие «ЗА»/«ПРОТИВ» иначе
         # находятся внутри обычного текста
-        m = re.search(r"(?:^|\n)\s*(?:\*\*)?%s(?:\*\*)?\s*:?" % heading, content, re.I)
+        m = re.search(r"(?:^|\n)\s*(?:#{1,4}\s*)?(?:\*\*)?%s(?:\*\*)?\s*:" % heading, content, re.I)
         if not m:
             return []
         tail = content[m.end():]
-        stop = re.search(r"\n\s*(?:\*\*)?(?:ЧТО ПРОТИВ|ЧТО ЗА|ПРОТИВ|ЗА|РЕШЕНИЕ|ИТОГ|ВЫВОД)\b", tail, re.I)
+        stop = re.search(r"\n\s*(?:\*\*)?(?:ЧТО ПРОТИВ|ЧТО ЗА|ПРОТИВ|ЗА|РЕШЕНИЕ|ИТОГ|ВЫВОД|КОРОТКО)\b", tail, re.I)
         block = tail[: stop.start()] if stop else tail
         lines = []
         for raw in block.split("\n"):
             line = re.sub(r"^[\s>]*[-*•·]\s*", "", raw).replace("**", "").strip()
-            if 8 < len(line) < 260:
+            if 8 < len(line) < 600:
                 lines.append(line)
         flat: List[str] = []
         for line in lines:
-            # модель иногда пишет всё одной строкой: «1) … 2) … 3) …»
-            if re.search(r"\d\)\s", line[2:]):
-                flat += [p.strip() for p in re.split(r"\s*\d\)\s*", line) if len(p.strip()) > 8]
+            # модель иногда пишет всё одной строкой: «1) … 2) … 3) …».
+            # Цифра перед скобкой должна стоять после пробела, иначе резались
+            # обычные числа: «($81.25)» ломалось по «5)», а «RSI(14)» по «4)».
+            if re.search(r"(?:(?<=\s)|^)\d\)\s", line[2:]):
+                flat += [p.strip() for p in re.split(r"(?:(?<=\s)|^)\d\)\s*", line) if len(p.strip()) > 8]
             else:
                 flat.append(line)
-        return [re.sub(r"^[-*•·\s]+", "", f).strip() for f in flat][:4]
+        return [re.sub(r"^[-*•·\s]+", "", f).strip() for f in flat][:8]
 
     pros = grab("ЧТО ЗА ПОЗИЦИЮ") or grab("ЗА")
     cons = grab("ЧТО ПРОТИВ") or grab("ПРОТИВ")
-    return {"pros": pros, "cons": cons, "summary": parse_summary(content)}
+    return {
+        "pros": pros,
+        "cons": cons,
+        "summary": parse_summary(content),
+        "short": parse_short(content),
+        "body": parse_body(content),
+    }
 
 
 def parse_summary(content: str) -> str:
@@ -368,29 +270,141 @@ def parse_summary(content: str) -> str:
     # Заголовок ищем только с начала строки и по границе слова: иначе «ВЫВОД»
     # находится внутри фразы «Прошлый вывод…» и отрезает начало итога.
     m = re.search(r"(?:^|\n)\s*(?:\*\*)?(?:ИТОГ|ВЫВОД)(?:\*\*)?\s*(?::|\n)\s*", content or "", re.I)
-    block = content[m.end():] if m else (content or "")
+    if m:
+        block = content[m.end():]
+    else:
+        block = _conclusion(content or "")
     # Ответ часто идёт одним абзацем без заголовка, поэтому режем не по пустой
     # строке, а по началу разделов «ЗА»/«ПРОТИВ» — они уже на своих строках.
-    stop = re.search(r"\n\s*(?:\*\*)?(?:ЧТО ЗА ПОЗИЦИЮ|ЧТО ПРОТИВ|ПРОТИВ|ЗА)\b\s*:", block)
+    stop = re.search(r"\n\s*(?:\*\*)?(?:ЧТО ЗА ПОЗИЦИЮ|ЧТО ПРОТИВ|ПРОТИВ|ЗА|КОРОТКО)\b\s*:", block)
     if stop:
         block = block[: stop.start()]
     text = re.sub(r"^[\s>*•·-]+", "", block.replace("**", "")).strip()
+    # ассистент подписывает вывод: «Вывод для держателя: …» — в карточке это лишнее
+    text = re.sub(r"^(?:итог|вывод|заключение|резюме)[^:.\n]{0,30}:\s*", "", text, flags=re.I)
     text = re.sub(r"\s*\n\s*", " ", text)
-    return text[:700]
+    # решётки markdown-заголовков модель ставит и в конце абзаца тоже
+    text = re.sub(r"\s*#{2,}\s*", " ", text).strip()
+    return text[:4000]
+
+
+def _prose_paragraphs(content: str) -> List[str]:
+    """Абзацы обычного текста: без заголовков, таблиц и списков."""
+    out: List[str] = []
+    buf: List[str] = []
+
+    def flush():
+        if buf:
+            out.append(" ".join(buf).strip())
+            del buf[:]
+
+    for raw in (content or "").split("\n"):
+        line = raw.strip()
+        if not line:
+            flush()
+            continue
+        if (re.match(r"^#{1,6}\s", line) or line.startswith("|")
+                or set(line) <= set("-—=*_ ")
+                or re.match(r"^[-*•·]\s", line) or re.match(r"^\d+[.)]\s", line)):
+            flush()
+            continue
+        buf.append(line.replace("**", "").strip())
+    flush()
+    return [p for p in out if p]
+
+
+META_RE = re.compile(r"tradingview|виджет|в интерфейсе|на графике выше|вы уже видите", re.I)
+
+
+DISCLAIMER_RE = re.compile(
+    r"не являет\w* (?:инвестиционн\w+ )?рекомендац|информационн\w+ характер"
+    r"|принимает\w* самостоятельно|do your own research|\bDYOR\b|не финансов\w+ совет",
+    re.I)
+
+
+def _is_disclaimer(text: str) -> bool:
+    """Служебный абзац, который не является выводом.
+
+    Два вида. Оговорка: ассистента просят не рекомендовать, и он дописывает
+    «анализ носит информационный характер» — абзац стоит последним и уезжал
+    в карточку вместо вывода. И реплика про интерфейс: «вы уже видите график
+    APE/USDT в TradingView» — это про экран, а не про монету."""
+    return bool(DISCLAIMER_RE.search(text or "") or META_RE.search(text or ""))
+
+
+CONCLUSION_HEAD_RE = re.compile(r"^\s*#{1,6}[^\n]*\b(итог\w*|вывод\w*|заключен\w+|резюме)\b[^\n]*$",
+                                re.I | re.M)
+
+
+def _conclusion(content: str) -> str:
+    """Вывод свободного ответа.
+
+    Сначала ищем раздел, названный итогом или выводом — ассистент почти всегда
+    его делает («## Итоговый свод фактов и следствий»). Если такого нет, берём
+    последний содержательный абзац."""
+    head = CONCLUSION_HEAD_RE.search(content or "")
+    if head:
+        paragraphs = [p for p in _prose_paragraphs(content[head.end():]) if not _is_disclaimer(p)]
+        joined = " ".join(paragraphs).strip()
+        if len(joined) >= 60:
+            return joined
+    return _closing_paragraph(content or "")
+
+
+def _closing_paragraph(content: str) -> str:
+    """Итог свободного ответа — последний содержательный абзац.
+
+    У ответа без служебного заголовка «ИТОГ» вывод стоит в конце: перед ним идут
+    заголовки, таблицы метрик и списки катализаторов. Первый абзац тут не годится
+    — там оказывались то «Основные метрики», то строка с адресом контракта."""
+    paragraphs = [p for p in _prose_paragraphs(content) if not _is_disclaimer(p)]
+    if not paragraphs:
+        return ""
+    for p in reversed(paragraphs):
+        if len(p) >= 80:
+            return p
+    return paragraphs[-1]
+
+
+def parse_body(content: str) -> str:
+    """Сам разбор — то, что ассистент написал до служебного хвоста.
+
+    Хвост (ЧТО ЗА ПОЗИЦИЮ / ЧТО ПРОТИВ / ИТОГ / КОРОТКО) разбирается отдельно и
+    показывается своими блоками. Всё, что выше, — это и есть анализ, ради
+    которого запрос делался, и на карточке риска он занимает главное место."""
+    content = _normalize_sections(content or "")
+    stop = re.search(
+        r"\n\s*(?:#{1,4}\s*)?\*{0,2}\s*(?:ЧТО ЗА ПОЗИЦИЮ|ЧТО ПРОТИВ|ИТОГ|ВЫВОД|КОРОТКО)\*{0,2}\s*:",
+        content, re.I)
+    body = content[: stop.start()] if stop else content
+    return body.strip()[:12000]
+
+
+def parse_short(content: str) -> str:
+    """Одна фраза для карточки в списке позиций. Полный итог туда не влезает.
+
+    Раздела может не быть: у шаблона «свой промпт» его никто не просил, да и
+    модель иногда забывает. Тогда возвращаем пустую строку, а карточка сама
+    откатывается на первое предложение итога."""
+    content = _normalize_sections(content)
+    m = re.search(r"(?:^|\n)\s*(?:\*\*)?КОРОТКО(?:\*\*)?\s*(?::|\n)\s*", content or "", re.I)
+    if not m:
+        return ""
+    block = content[m.end():]
+    stop = re.search(r"\n\s*(?:\*\*)?(?:ЧТО ЗА ПОЗИЦИЮ|ЧТО ПРОТИВ|ПРОТИВ|ЗА|ИТОГ|ВЫВОД)\b\s*:", block)
+    if stop:
+        block = block[: stop.start()]
+    # берём первую непустую строку: список из одного пункта модель всё равно
+    # иногда пишет дефисом
+    for raw in block.split("\n"):
+        line = re.sub(r"^[\s>*•·-]+", "", raw.replace("**", "")).strip()
+        line = re.sub(r"\s*#{2,}\s*", " ", line).strip()
+        if len(line) > 8:
+            return line[:200]
+    return ""
 
 
 HISTORY_LIMIT = 12
-
-
-def _wants_social(ai: Dict[str, Any], token: Dict[str, Any]) -> bool:
-    """X смотрим не по всем токенам: «notable» — только там, где что-то происходит."""
-    mode = ai.get("social") or "notable"
-    if mode == "off":
-        return False
-    if mode == "all":
-        return True
-    critical = bool([r for r in (token.get("reasons") or []) if r.get("weight", 0) <= -12])
-    return token.get("score", 100) <= 45 or critical
 
 
 def last_insight(symbol: str) -> Optional[Dict[str, Any]]:
@@ -410,6 +424,8 @@ def save_insight(symbol: str, content: str, template: str = "full", seconds: Opt
     entry = {
         "at": _now(),
         "summary": parsed["summary"],
+        "short": parsed["short"],
+        "body": parsed["body"],
         "pros": parsed["pros"],
         "cons": parsed["cons"],
         "content": content,
@@ -427,7 +443,7 @@ def save_insight(symbol: str, content: str, template: str = "full", seconds: Opt
         cur = cur or {}
         rows = cur.get(key) or []
         # полный текст храним и здесь: прошлый разбор нужно уметь открыть целиком
-        rows.insert(0, {k: entry[k] for k in ("at", "summary", "pros", "cons", "template", "seconds", "content")})
+        rows.insert(0, {k: entry[k] for k in ("at", "summary", "short", "body", "pros", "cons", "template", "seconds", "content")})
         cur[key] = rows[:HISTORY_LIMIT]
         return cur
 
@@ -446,16 +462,9 @@ def analyze_one(symbol: str) -> Dict[str, Any]:
     token = next((t for t in (analysis.get("tokens") or []) if t["symbol"].upper() == symbol.upper()), None)
     if not token:
         return {"error": "Токена %s нет в портфеле" % symbol, "_status": 404}
-    fg = (analysis.get("context") or {}).get("fearGreed")
-    market_note = ("индекс страха и жадности %d/100 (%s)" % (fg["value"], fg["label"])) if fg else ""
     ai = settings["ai"]
-    prompt = build_token_prompt(
-        token, market_note,
-        template=ai.get("template") or "full",
-        previous=last_insight(symbol),
-        social=_wants_social(ai, token),
-        custom=ai.get("customPrompt") or "",
-    )
+    prompt = build_token_prompt(token, template=ai.get("template") or "full",
+                                custom=ai.get("customPrompt") or "")
     res = ask_ascn(prompt, token["symbol"], creds)
     if not res.get("content"):
         return {"error": res.get("error") or "Ассистент не ответил", "_status": 502}
@@ -686,9 +695,6 @@ def run_agent(trigger: str = "manual") -> Dict[str, Any]:
     creds = ascn_credentials()
     ai_enabled = settings["ai"]["enabled"] and bool(creds["apiKey"]) and should_send
     candidates = _pick_for_ai(analysis, unique, settings["ai"]["maxTokensPerRun"]) if ai_enabled else []
-    fg = (analysis.get("context") or {}).get("fearGreed")
-    market_note = ("индекс страха и жадности %d/100 (%s)" % (fg["value"], fg["label"])) if fg else ""
-
     _update_job({"step": "ИИ разбирает токены" if candidates else "формирую сводку", "aiTotal": len(candidates)})
 
     ai_results: List[Dict[str, Any]] = []
@@ -699,13 +705,8 @@ def run_agent(trigger: str = "manual") -> Dict[str, Any]:
         template = settings["ai"].get("template") or "full"
 
         def work(token):
-            prompt = build_token_prompt(
-                token, market_note,
-                template=template,
-                previous=last_insight(token["symbol"]),
-                social=_wants_social(settings["ai"], token),
-                custom=settings["ai"].get("customPrompt") or "",
-            )
+            prompt = build_token_prompt(token, template=template,
+                                        custom=settings["ai"].get("customPrompt") or "")
             res = ask_ascn(prompt, token["symbol"], creds)
             with lock:
                 done[0] += 1

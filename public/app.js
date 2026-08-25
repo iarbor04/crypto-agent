@@ -120,6 +120,19 @@ function sparkline(data, width, height) {
 
 // ————— загрузка данных —————
 
+// м:сс от заданного момента — одно и то же время показывают и разбор ASCN,
+// и пересчёт цен.
+function elapsed(from) {
+  const secs = Math.round((Date.now() - from) / 1000);
+  return Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0");
+}
+
+// Свежий пересчёт ждёт внешние API до 75 секунд, и всё это время кнопка
+// показывает одно «Считаю…» — выглядит как зависшее. Тикаем время, как в
+// разборе ASCN, чтобы было видно: процесс живой.
+let loadStartedAt = 0;
+let loadTick = null;
+
 // sync=true заставляет сервер пересчитать всё и ждать ответа: это кнопка
 // «Обновить». Обычная загрузка берёт готовый снимок, а если он устарел,
 // сервер считает в фоне — тогда мы просто дочитываем результат.
@@ -128,9 +141,13 @@ async function loadAnalysis(force, sync) {
   if (state.analysis && !force) return;
   state.loading = true;
   state.error = null;
+  loadStartedAt = Date.now();
+  if (loadTick) clearInterval(loadTick);
+  loadTick = setInterval(render, 1000);
   render();
   const data = await api("/api/analysis" + (sync ? "?fresh=1" : ""));
   state.loading = false;
+  if (loadTick) { clearInterval(loadTick); loadTick = null; }
   if (data && data.tokens) {
     state.analysis = data;
     if (data.stale) waitForFresh();
@@ -150,8 +167,7 @@ function aiRunProgress() {
   const entries = Object.keys(aiRunAll.states);
   const done = entries.filter((k) => aiRunAll.states[k] !== "run").length;
   const total = entries.length;
-  const secs = Math.round((Date.now() - aiRunAll.startedAt) / 1000);
-  const time = Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0");
+  const time = elapsed(aiRunAll.startedAt);
   const chips = entries
     .map(function (sym) {
       const st = aiRunAll.states[sym];
@@ -242,7 +258,8 @@ function portfolioPage() {
     actions:
       '<div class="view-toggle"><button data-act="view-cards" class="' + (state.view === "cards" ? "active" : "") + '">Карточки</button>' +
       '<button data-act="view-table" class="' + (state.view === "table" ? "active" : "") + '">Таблица</button></div>' +
-      '<button class="ghost-button" data-act="reload">' + (state.loading ? "Считаю…" : "Обновить цены") + "</button>" +
+      '<button class="ghost-button" data-act="reload">' +
+      (state.loading ? 'Считаю… <span class="mono">' + elapsed(loadStartedAt) + "</span>" : "Обновить цены") + "</button>" +
       '<button class="ghost-button" data-act="ai-run-all"' + (aiRunAll.busy ? " disabled" : "") + ">" +
       (aiRunAll.busy ? "Идёт разбор ASCN…" : "Обновить разбор ASCN") + "</button>" +
       '<button class="primary-button" data-act="edit">＋ Мои токены</button>',
@@ -250,7 +267,7 @@ function portfolioPage() {
 
   html += aiRunProgress();
   if (state.error) html += '<div class="error-banner">' + esc(state.error) + "</div>";
-  if (!a) return html + (state.loading ? '<div class="loading"><i></i>Считаю портфель…</div>' : "");
+  if (!a) return html + (state.loading ? '<div class="loading"><i></i>Считаю портфель… <span class="mono">' + elapsed(loadStartedAt) + "</span></div>" : "");
 
   if (a.partial)
     html +=
@@ -377,20 +394,18 @@ function sidesBlock(pros, cons) {
 function tokenCard(t) {
   const v = VERDICT[t.verdict];
   const rank = (t.meta && t.meta.rank) || (t.market && t.market.rank);
-  const tags = []
-    .concat(((t.meta && t.meta.categories) || []).slice(0, 2).map((c) => '<span class="chain-tag cat">' + esc(c) + "</span>"))
-    .concat(((t.meta && t.meta.chains) || []).slice(0, 3).map((c) => '<span class="chain-tag">' + esc(c.chain) + "</span>"))
-    .join("");
   const inds = (t.indicatorsRead || [])
     .filter((i) => i.tone !== "neutral")
     .slice(0, 2)
     .map((i) => '<span class="ind ' + i.tone + '">' + esc(i.text) + "</span>")
     .join("");
   const ai = t.ai || {};
-  const prosCons =
-    ai.summary
-      ? '<p class="card-ai">' + esc(ai.summary) + "</p>" + sidesBlock(ai.pros, ai.cons)
-      : sidesBlock(ai.pros, ai.cons);
+  // В карточке — вывод ассистента связным текстом. Пункты «за/против» тут не
+  // нужны: их читают на «Рейтинге риска», а здесь они дробят вывод на обрывки.
+  // Без разбора ASCN откатываемся на свою модель — иначе карточка пустая.
+  const prosCons = ai.summary
+    ? '<p class="card-ai">' + esc(ai.summary) + "</p>"
+    : sidesBlock(ai.pros, ai.cons);
   const earn = t.best
     ? '<div class="token-earn"><b class="mono">' + t.best.apy.toFixed(1) + "% в год</b> " + esc(t.best.project) + " " + riskDots(t.best.risk) +
       '<span class="right mono">+' + money(t.potentialYearlyUsd) + "</span></div>"
@@ -410,7 +425,6 @@ function tokenCard(t) {
     '<small class="mono">' + amount(t.amount) + " " + esc(t.symbol) + " · " + (t.market ? moneySmart(t.market.price) : "—") + " · " + t.share.toFixed(1) + "% портфеля</small></div>" +
     '<div style="text-align:right">' + delta(t.market && t.market.change24h) + '<div style="margin-top:3px"><span style="color:#a3a9b6;font-size:9px;margin-right:5px">7Д</span>' + delta(t.market && t.market.change7d) + "</div></div></div>" +
     '<div class="token-chart">' + sparkline((t.market && t.market.sparkline7d) || []) + "</div>" +
-    (tags ? '<div class="token-tags">' + tags + "</div>" : "") +
     (inds ? '<div class="ind-row">' + inds + "</div>" : "") +
     '<div class="token-meta-row">' + riskMeter(t.score) + "</div>" + prosCons + earn + cex + "</button>"
   );
@@ -448,13 +462,14 @@ function risksPage() {
     title: "На что обратить внимание",
     sub: "Самые слабые позиции сверху: что против них, что за них и что с этим делать",
     actions:
-      '<button class="ghost-button" data-act="reload">' + (state.loading ? "Считаю…" : "Обновить цены") + "</button>" +
+      '<button class="ghost-button" data-act="reload">' +
+      (state.loading ? 'Считаю… <span class="mono">' + elapsed(loadStartedAt) + "</span>" : "Обновить цены") + "</button>" +
       '<button class="primary-button" data-act="ai-run-all"' + (aiRunAll.busy ? " disabled" : "") + ">" +
       (aiRunAll.busy ? "Идёт разбор ASCN…" : "Обновить разбор ASCN") +
       "</button>",
   });
   html += aiRunProgress();
-  if (!a) return html + (state.loading ? '<div class="loading"><i></i>Собираю метрики…</div>' : "");
+  if (!a) return html + (state.loading ? '<div class="loading"><i></i>Собираю метрики… <span class="mono">' + elapsed(loadStartedAt) + "</span></div>" : "");
 
   const ranked = a.tokens.slice().sort((x, y) => x.score - y.score);
   const problem = ranked.filter((t) => t.score < 56);
@@ -500,7 +515,7 @@ function prosConsBlock(t, compact) {
   const pros = fromAi ? ai.pros || [] : t.reasons.filter((r) => r.kind === "good").map((r) => r.text);
   const cons = fromAi ? ai.cons || [] : t.reasons.filter((r) => r.kind === "bad").map((r) => r.text);
   const list = (items, cls, empty) =>
-    items.length ? items.slice(0, compact ? 4 : 6).map((x) => "<p><i></i>" + esc(x) + "</p>").join("") : '<p class="none">' + empty + "</p>";
+    items.length ? items.slice(0, compact ? 4 : 10).map((x) => "<p><i></i>" + esc(x) + "</p>").join("") : '<p class="none">' + empty + "</p>";
   const source = fromAi
     ? '<p class="pc-source">утверждения ассистента ASCN' + (ai.at ? " от " + when(ai.at) : "") +
       " — даты, суммы и ссылки на людей мы не проверяли</p>"
@@ -511,10 +526,105 @@ function prosConsBlock(t, compact) {
   );
 }
 
+// Ассистент возвращает две версии итога: развёрнутую и строку «КОРОТКО».
+// Для заголовков и карточек в списке нужна вторая; если её нет (свой промпт
+// или модель забыла раздел) — берём первое предложение развёрнутого итога.
+function aiBrief(ai) {
+  ai = ai || {};
+  if (ai.short) return ai.short;
+  const full = ai.summary || "";
+  if (!full) return "";
+  const cut = full.match(/^[\s\S]*?[.!?](\s|$)/);
+  return (cut ? cut[0] : full).trim();
+}
+
+// Ассистент отвечает почти-markdown: ### заголовки, **жирный**, списки дефисами.
+// Тянуть библиотеку ради этого незачем — экранируем и разбираем четыре случая.
+// Внутристрочная разметка — одна и та же в абзацах, списках и ячейках таблиц.
+// Пока это жило только в ветке абзацев, ссылки внутри таблиц оставались сырыми.
+function aiInline(text) {
+  return String(text)
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/\*\*/g, "")
+    // адреса контрактов ассистент оборачивает в обратные кавычки
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/`/g, "")
+    // ссылки на источники: [11](https://…). Пускаем только http(s), адрес
+    // приходит от модели — открываем в новой вкладке и рвём связь с opener
+    .replace(/\[([^\]]{1,80})\]\((https?:\/\/[^\s)]+)\)/g, function (_, label, href) {
+      // ассистент нумерует источники: [11](https://finance.yahoo.com/…). Цифра
+      // ничего не говорит — показываем домен, по нему видно, кому верить
+      let text = String(label).trim();
+      if (/^\d+$/.test(text)) {
+        const host = href.match(/^https?:\/\/(?:www\.)?([^\/?#]+)/);
+        if (host) text = host[1];
+      }
+      return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + text + "</a>";
+    });
+}
+
+function aiMarkdown(text) {
+  let out = "";
+  let inList = false;
+  let inTable = false;
+  const closeTable = function () { if (inTable) { out += "</tbody></table></div>"; inTable = false; } };
+  const closeList = function () { if (inList) { out += "</ul>"; inList = false; } };
+  esc(text || "").split(/\n+/).forEach(function (raw) {
+    let line = raw.trim();
+    if (!line) return;
+
+    // ассистент любит markdown-таблицы: «| Параметр | Значение |»
+    if (line.indexOf("|") === 0) {
+      const cells = line.split("|").slice(1, -1).map(function (c) { return c.trim(); });
+      if (!cells.length) return;
+      if (cells.every(function (c) { return /^:?-{2,}:?$/.test(c); })) return; // строка-разделитель
+      closeList();
+      const tag = inTable ? "td" : "th";
+      if (!inTable) { out += '<div class="ai-table"><table><tbody>'; inTable = true; }
+      out += "<tr>" + cells.map(function (c) {
+        return "<" + tag + ">" + aiInline(c) + "</" + tag + ">";
+      }).join("") + "</tr>";
+      return;
+    }
+    closeTable();
+    line = aiInline(line.replace(/^#{1,6}\s*/, ""));
+    if (/^[-*•·]\s+/.test(line) || /^\d+[.)]\s+/.test(line)) {
+      if (!inList) { out += "<ul>"; inList = true; }
+      out += "<li>" + line.replace(/^(?:[-*•·]|\d+[.)])\s+/, "") + "</li>";
+    } else {
+      closeList();
+      out += "<p>" + line + "</p>";
+    }
+  });
+  closeList();
+  closeTable();
+  return out;
+}
+
+// Разбор ассистента целиком: сам текст плюс итог. На карточке риска это главное,
+// ради чего запрос и делается, — списки «за/против» идут после.
+function aiBodyBlock(t) {
+  const ai = t.ai || {};
+  if (!ai.body && !ai.summary) return "";
+  // В свободном ответе итог — это просто первый абзац разбора. Печатать его
+  // отдельной врезкой над тем же текстом незачем.
+  const body = ai.body || "";
+  const lead = ai.summary && body.indexOf(ai.summary.slice(0, 60)) < 0 ? ai.summary : "";
+  return (
+    '<div class="ai-body">' +
+    (lead ? '<p class="ai-lead">' + esc(lead) + "</p>" : "") +
+    (body
+      ? '<span class="eyebrow">РАЗБОР АССИСТЕНТА ASCN</span>' + aiMarkdown(body)
+      : ai.summary
+      ? '<p class="ai-lead">' + esc(ai.summary) + "</p>"
+      : "") +
+    "</div>"
+  );
+}
+
 // Заголовок оценки: если ассистент дал итог — показываем его, а не мою формулу
 function verdictHeadline(t, hasUpside) {
-  const summary = (t.ai || {}).summary;
-  return summary || riskHeadline(t.score, hasUpside);
+  return aiBrief(t.ai) || riskHeadline(t.score, hasUpside);
 }
 
 function riskHeadline(score, hasUpside) {
@@ -595,8 +705,10 @@ function riskCard(t, rank) {
     '<span class="mono" style="color:var(--ink);font-weight:700">' + money(t.valueUsd) + "</span>" +
     "<span>7д " + delta(t.market && t.market.change7d) + "</span><span>30д " + delta(t.market && t.market.change30d) + "</span></div></div>" +
     '<button class="ghost-button" data-token="' + esc(t.symbol) + '">Подробно</button></header>' +
-    '<div class="reason-grid-wrap"><div class="risk-verdict"><div><span class="label">Оценка позиции</span><h3>' + esc(verdictHeadline(t, hasUpside)) + "</h3></div>" +
+    '<div class="reason-grid-wrap"><div class="risk-verdict"><div><span class="label">Оценка позиции</span>' +
+    (t.ai && t.ai.summary ? "" : "<h3>" + esc(riskHeadline(t.score, hasUpside)) + "</h3>") + "</div>" +
     '<div style="display:flex;align-items:flex-start;gap:14px">' + riskScale(t.score) + "</div></div>" +
+    aiBodyBlock(t) +
     prosConsBlock(t, true) + "</div>" +
     '<div class="plan-strip"><span class="pill pill-gray">ФАКТЫ</span><span>' + esc(facts.join(" · ")) + "</span></div></article>"
   );
@@ -684,7 +796,7 @@ async function renderAgentBody() {
     [["summary", "Только итог"], ["full", "Полный разбор"], ["custom", "Свой промпт"]]
       .map(([v, l]) => '<button data-act="ai-template" data-template="' + v + '" class="' + (s.ai.template === v ? "active" : "") + '">' + l + "</button>")
       .join("") +
-    "<span>" + (s.ai.template === "summary" ? "2–4 предложения плюс по два факта за и против" : s.ai.template === "full" ? "теханализ, ончейн, сантимент, ликвидации и итог" : "текст задаёте сами") + "</span></div>" +
+    "<span>" + (s.ai.template === "summary" ? "тот же анализ, но не длиннее 150 слов" : s.ai.template === "full" ? "анализ монеты за сутки и неделю плюс перспективы" : "текст задаёте сами") + "</span></div>" +
     (s.ai.template === "custom"
       ? '<label class="field" style="margin-top:14px">СВОЙ ПРОМПТ<textarea id="ai-prompt" rows="4" style="padding:10px 11px;border:1px solid var(--line);border-radius:9px;resize:vertical">' +
         esc(s.ai.customPrompt || "") + "</textarea></label>" +
@@ -732,7 +844,7 @@ function aiTab(t) {
     ? rows
         .map((r, i) => '<button class="hist-item' + (i === aiHistory.picked ? " active" : "") +
           '" data-act="ai-pick" data-i="' + i + '"><b>' + when(r.at) + "</b><span>" +
-          esc((r.summary || "").slice(0, 60)) + "…</span></button>")
+          esc((aiBrief(r) || "").slice(0, 60)) + "…</span></button>")
         .join("")
     : '<p class="hint">Разборов пока нет</p>';
 
@@ -752,7 +864,7 @@ function aiTab(t) {
         ? '<details class="ai-full"' + (aiFullOpen ? " open" : "") + '><summary data-act="ai-full">Полный ответ ассистента</summary>' +
           '<pre class="ai-raw">' + esc(shown.content || ai.content) + "</pre></details>"
         : picked
-        ? '<p class="hint">Полный текст хранится только для последнего разбора — в истории остаётся итог с фактами.</p>'
+        ? '<p class="hint">У этой записи нет полного текста — она сохранена до того, как его начали хранить.</p>'
         : "")
     : '<p class="hint">Итог по токену даёт ассистент ASCN. Нажмите «Обновить анализ» — ответ идёт 3–6 минут.</p>';
 
@@ -804,12 +916,12 @@ function renderDrawer(t) {
   const tabs = [
     ["ai", "Итог ASCN"],
     ["earn", "Заработать · " + t.opportunities.length],
-    ["why", "Разбор"],
     ["profile", "Профиль"],
-    ["news", "Новости · " + t.news.length],
-    ["exit", "Выход и хедж"],
   ];
-  const body = { ai: aiTab, earn: earnTab, why: whyTab, profile: profileTab, news: newsTab, exit: exitTab }[drawerTab](t);
+  // Вкладка «Новости» показывала выдачу поиска вроде «APE/BTC - ApeCoin بيتكوين»,
+  // а новости с датами и источниками теперь идут в разборе ассистента.
+  // «Выход и хедж» убран оттуда же — расчёт остаётся в строке «ФАКТЫ».
+  const body = ({ ai: aiTab, earn: earnTab, profile: profileTab }[drawerTab] || aiTab)(t);
 
   $("#drawer-root").innerHTML =
     '<div class="overlay" data-act="drawer-close"><aside class="drawer" data-stop="1"><div class="drawer-head">' +
@@ -856,30 +968,6 @@ function earnTab(t) {
   return html;
 }
 
-function whyTab(t) {
-  const hasUpside = t.reasons.some((r) => r.kind === "good") || ((t.ai || {}).pros || []).length > 0;
-  let html =
-    '<div class="risk-verdict"><div><span class="label">Оценка позиции</span><h3>' + esc(verdictHeadline(t, hasUpside)) + "</h3></div>" +
-    '<div style="display:flex;align-items:flex-start;gap:14px">' + riskScale(t.score) + "</div></div>" +
-    prosConsBlock(t);
-  if (t.ai) html += '<p class="hint" style="margin:12px 0 16px;font-size:10.5px">Первые пункты — из разбора ассистента ASCN от ' + new Date(t.ai.at).toLocaleString("ru-RU") + ", остальные из моей модели.</p>";
-  if ((t.indicatorsRead || []).length)
-    html +=
-      '<div class="section-title" style="margin-top:18px"><h3>Индикаторы</h3><span>дневные свечи ' + esc((t.indicators || {}).source || "") + "</span></div>" +
-      '<div class="ind-grid">' + t.indicatorsRead.map((i) => '<div class="ind-item ' + i.tone + '">' + esc(i.text) + "</div>").join("") + "</div>";
-  const m = t.market;
-  if (m)
-    html +=
-      '<div class="drawer-stats">' +
-      '<div><span>Капитализация</span><strong class="mono">$' + short(m.marketCap) + "</strong><small>" + (m.rank ? "#" + m.rank + " по рынку" : "") + "</small></div>" +
-      '<div><span>Наторговали за сутки</span><strong class="mono">$' + short(m.volume24h) + "</strong></div>" +
-      '<div><span>Ниже максимума</span><strong class="mono">' + pct(m.athChangePct, 0) + "</strong></div>" +
-      '<div><span>Выпущено в рынок</span><strong class="mono">' + (m.circulatingSupply && m.totalSupply ? Math.round((m.circulatingSupply / m.totalSupply) * 100) + "%" : "—") + "</strong></div>" +
-      '<div><span>Новостной фон</span><strong class="mono">' + t.newsTone.toFixed(1) + "</strong><small>от −3 до +3</small></div>" +
-      '<div><span>Плата за плечо</span><strong class="mono">' + (t.funding == null ? "фьючерса нет" : Math.round(t.funding * 3 * 365 * 100) + "% в год") + "</strong></div></div>";
-  return html;
-}
-
 function profileTab(t) {
   const meta = t.meta;
   if (!meta) return '<p class="hint">CoinGecko не отдал профиль по этому токену.</p>';
@@ -901,84 +989,6 @@ function profileTab(t) {
   }
   return html;
 }
-
-function newsTab(t) {
-  if (!t.news.length) {
-    const ai = t.ai && t.ai.content;
-    const section = ai && ai.match(/(?:\*\*)?3\)?\s*САНТИМЕНТ[\s\S]*?(?=(?:\*\*)?4\)|$)/i);
-    return (
-      '<p class="hint">В бесплатных новостных лентах свежих упоминаний ' + esc(t.symbol) + " нет — они пишут про топ-10." +
-      (section ? " Ниже — новостной раздел из разбора ассистента." : " Запустите разбор ИИ на странице «Агент».") + "</p>" +
-      (section ? '<pre class="run-summary" style="border-top:0;border-radius:12px;margin-top:14px">' + esc(section[0].replace(/\*\*/g, "").trim()) + "</pre>" : "")
-    );
-  }
-  return t.news
-    .map((n) => {
-      const color = n.tone <= -2 ? ["#c33b42", "var(--red-soft)"] : n.tone < 0 ? ["#b9741a", "var(--amber-soft)"] : n.tone > 0 ? ["#1c8f5a", "var(--green-soft)"] : ["#6f7789", "var(--soft)"];
-      return (
-        '<a class="news-item" href="' + esc(n.url) + '" target="_blank" rel="noreferrer">' +
-        '<span class="news-tone mono" style="color:' + color[0] + ";background:" + color[1] + '">' + (n.tone > 0 ? "+" : "") + n.tone + "</span>" +
-        "<div style=\"min-width:0\"><strong>" + esc(n.title) + "</strong><small>" + esc(n.source) +
-        (n.publishedAt ? " · " + new Date(n.publishedAt).toLocaleDateString("ru-RU") : " · дата неизвестна") +
-        (n.ageDays != null && n.ageDays > 14 ? " · старая, в оценку не идёт" : "") +
-        (n.tags.length ? " · " + esc(n.tags.join(", ")) : "") + "</small></div></a>"
-      );
-    })
-    .join("");
-}
-
-function exitTab(t) {
-  const L = t.liquidity;
-  const level = t.risk ? t.risk.short : "";
-  const bad = t.verdict === "sell" || t.verdict === "reduce";
-  let html = '<p class="hint" style="margin-bottom:16px' + (bad ? ";color:#a83c42" : "") + '">' +
-    (bad ? "Позиция " + money(t.valueUsd) + ", риск " + level + ". Ниже — как выйти, не уронив себе цену." : "Позиция в порядке, риск " + level + ". Инструменты ниже, если решение всё равно нужно.") + "</p>";
-
-  if (L) {
-    const cover = L.sellCapacityUsd && t.valueUsd ? L.sellCapacityUsd / t.valueUsd : null;
-    html +=
-      '<div class="depth-card"><div class="depth-head"><div><span class="label">Сколько можно продать сразу</span>' +
-      '<strong class="mono" style="display:block;margin-top:6px">' + money(L.sellCapacityUsd) + "</strong></div>" +
-      '<span class="pill ' + (cover == null ? "pill-gray" : cover < 1.5 ? "pill-red" : cover < 5 ? "pill-amber" : "pill-green") + '">' +
-      (cover == null ? "нет данных" : cover < 1.5 ? "позиция больше рынка в " + (1 / cover).toFixed(1) + "×" : "позиция влезает " + (cover < 100 ? cover.toFixed(1) : Math.round(cover)) + "×") + "</span></div>";
-    if (L.binance)
-      html +=
-        '<p class="hint" style="margin-bottom:10px;font-size:10.5px">' + esc(L.binance.venue) + ", пара " + esc(L.binance.pair) + ". Разница между покупкой и продажей " + L.binance.spreadPct.toFixed(3) + "%. Заявки на покупку в очереди:</p>" +
-        '<div class="depth-ladder"><div><span>уронив цену на 0.5%</span><b class="mono">' + money(L.binance.usd05) + "</b></div>" +
-        '<div><span>на 1%</span><b class="mono">' + money(L.binance.usd1) + "</b></div>" +
-        '<div><span>на 2%</span><b class="mono">' + money(L.binance.usd2) + "</b></div></div>";
-    if (L.dexPairs.length)
-      html +=
-        '<p class="hint" style="margin:14px 0 8px;font-size:10.5px">Пулы на DEX: ' + money(L.dexTotalUsd) + " в " + L.dexPairs.length + " парах</p>" +
-        L.dexPairs.map((p) => '<a class="venue-row" href="' + esc(p.url) + '" target="_blank" rel="noreferrer"><b>' + esc(p.dex) + " · " + esc(p.chain) + '</b><span class="mono">' + esc(p.pair) + '</span><span class="mono" style="color:#8b93a4">в пуле ' + money(p.liquidityUsd) + "</span></a>").join("");
-    html += "</div>";
-  }
-
-  html += '<div id="venues"></div>';
-  html += t.exits.map((e) => '<a class="exit-item" href="' + esc(e.url) + '" target="_blank" rel="noreferrer"><strong>' + esc(e.label) + " →</strong><p>" + esc(e.hint) + "</p></a>").join("");
-  html += '<p class="hint" style="margin-top:16px;font-size:10.5px">Все цифры — расчёт по публичным данным CoinGecko, DeFiLlama и биржевых стаканов. Это не инвестиционная рекомендация.</p>';
-
-  if (t.meta && t.meta.coinId) loadVenues(t.meta.coinId);
-  return html;
-}
-
-async function loadVenues(coinId) {
-  const res = await api("/api/venues?coinId=" + encodeURIComponent(coinId));
-  const box = $("#venues");
-  if (!box || !res.venues || !res.venues.length) return;
-  box.innerHTML =
-    '<div class="section-title"><h3>Где продавать</h3><span>по обороту, со спредом</span></div><div class="venue-list">' +
-    res.venues
-      .map(
-        (v) =>
-          '<div class="venue-row"><b>' + esc(v.name) + '</b><span class="mono">' + esc(v.pair) + '</span><span class="mono" style="color:#8b93a4">' + money(v.volumeUsd) + " за сутки</span>" +
-          '<span class="spread mono" style="color:' + (v.spreadPct == null ? "#8b93a4" : v.spreadPct < 0.2 ? "var(--green)" : v.spreadPct < 1 ? "var(--amber)" : "var(--red)") + '">' +
-          (v.spreadPct == null ? "—" : v.spreadPct.toFixed(2) + "%") + "</span></div>"
-      )
-      .join("") + "</div>";
-}
-
-// ————— редактор портфеля —————
 
 const editor = { rows: [], prices: {}, search: null };
 
@@ -1139,7 +1149,7 @@ async function historyPage() {
             '<span class="mono">' + money(r.totalValueUsd) + "</span>" +
             '<span class="pill ' + (r.telegram && r.telegram.sent ? "pill-green" : "pill-gray") + '">' +
             (r.telegram && r.telegram.sent ? "отправлено" : "не отправлено") + "</span></header>" +
-            (saved && saved.summary ? '<p class="hist-summary">' + esc(saved.summary) + "</p>" : "") +
+            (saved && aiBrief(saved) ? '<p class="hist-summary">' + esc(aiBrief(saved)) + "</p>" : "") +
             (alerts.length
               ? '<div class="hist-alerts">' +
                 alerts.map((a) => '<p class="' + (a.level === "critical" ? "c" : "") + '"><b>' + esc(a.title) + "</b></p>").join("") +
@@ -1163,13 +1173,22 @@ async function historyPage() {
       saved
         .map(
           (x) =>
-            '<div class="hist-insight"><b>' + when(x.at) + "</b><p>" + esc(x.summary || "—") + "</p>" +
+            '<div class="hist-insight"><b>' + when(x.at) +
+            (x.seconds ? " · ассистент отвечал " + Math.round(x.seconds) + " с" : "") +
+            "</b><p>" + esc(x.summary || "—") + "</p>" +
             ((x.pros || []).concat(x.cons || []).length
               ? '<div class="card-proscons">' +
                 (x.pros || []).slice(0, 2).map((v) => '<p class="p"><i></i>' + esc(v) + "</p>").join("") +
                 (x.cons || []).slice(0, 2).map((v) => '<p class="c"><i></i>' + esc(v) + "</p>").join("") +
                 "</div>"
-              : "") + "</div>"
+              : "") +
+            // полный текст лежит в каждой записи истории — раскрываем прямо здесь,
+            // иначе прошлый разбор виден только куском
+            (x.content
+              ? '<details class="ai-full"><summary>Полный ответ ассистента</summary>' +
+                '<pre class="ai-raw">' + esc(x.content) + "</pre></details>"
+              : '<p class="hint">Полного текста у этой записи нет — она сохранена до того, как его начали хранить.</p>') +
+            "</div>"
         )
         .join("") + "</div></div>"
     : "";
