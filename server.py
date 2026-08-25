@@ -17,6 +17,7 @@ import socket
 import socketserver
 import sys
 import threading
+import time
 import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler
@@ -85,6 +86,38 @@ def api_analysis(query: Dict[str, str], __: Any) -> Any:
     return analysis_for_page(force=query.get("fresh") == "1")
 
 
+def code_version() -> str:
+    """Какая версия кода поднята — иначе «у меня старое» нечем проверить.
+
+    Читаем HEAD прямо из .git, без вызова git: в песочнице его может не быть.
+    Если каталога .git нет вовсе, отдаём дату правки server.py."""
+    head = os.path.join(ROOT, ".git", "HEAD")
+    try:
+        with open(head, encoding="utf-8") as fh:
+            ref = fh.read().strip()
+        if ref.startswith("ref:"):
+            path = os.path.join(ROOT, ".git", ref.split(" ", 1)[1].strip())
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as fh:
+                    return fh.read().strip()[:7]
+            packed = os.path.join(ROOT, ".git", "packed-refs")
+            name = ref.split(" ", 1)[1].strip()
+            if os.path.exists(packed):
+                with open(packed, encoding="utf-8") as fh:
+                    for line in fh:
+                        if line.rstrip().endswith(" " + name):
+                            return line.split(" ", 1)[0][:7]
+        elif len(ref) >= 7:
+            return ref[:7]
+    except Exception:
+        pass
+    try:
+        stamp = os.path.getmtime(os.path.join(ROOT, "server.py"))
+        return "mtime-" + time.strftime("%Y%m%d-%H%M", time.localtime(stamp))
+    except Exception:
+        return "unknown"
+
+
 def api_health(_: Dict[str, str], __: Any) -> Any:
     """Проверяет сервер, доступ наружу и свежесть кэшей по каждому источнику."""
     egress = net.egress_state()
@@ -124,6 +157,7 @@ def api_health(_: Dict[str, str], __: Any) -> Any:
     settings = get_settings()
     return {
         "ok": True,
+        "version": code_version(),
         "python": sys.version.split()[0],
         "dataDir": os.path.isdir(store.DATA_DIR),
         "telegramReady": bool(settings["botToken"] and settings["chatId"]),
