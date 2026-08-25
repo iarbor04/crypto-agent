@@ -44,6 +44,30 @@ case "$1" in
       echo "Уже запущен, pid $(cat "$PIDFILE"). Остановить: ./run.sh --stop" >&2
       exit 1
     fi
+    # Порт мог остаться занят копией из другого каталога — её pid-файл лежит
+    # там, и проверка выше его не видит. Тогда наш процесс не забиндится и
+    # умрёт, а проба готовности ниже достучится до чужого сервера и объявит
+    # запуск удачным. Снаружи это выглядит как «поднялась старая версия».
+    if "$PY" - "$PORT" <<'BUSY' 2>/dev/null
+import socket, sys
+s = socket.socket()
+s.settimeout(0.5)
+sys.exit(0 if s.connect_ex(("127.0.0.1", int(sys.argv[1]))) == 0 else 1)
+BUSY
+    then
+      echo "Порт $PORT уже занят — на нём отвечает другой процесс." >&2
+      "$PY" - "$PORT" >&2 2>/dev/null <<'WHO'
+import json, sys, urllib.request
+try:
+    with urllib.request.urlopen("http://127.0.0.1:%s/api/health" % sys.argv[1], timeout=3) as r:
+        data = json.load(r)
+    print("Там уже работает этот же дашборд, версия %s." % (data.get("version") or "неизвестна"))
+except Exception:
+    print("Что это за процесс — определить не удалось, на /api/health он не отвечает.")
+WHO
+      echo "Останови его (./run.sh --stop в его каталоге) или задай другой PORT." >&2
+      exit 1
+    fi
     PORT="$PORT" nohup "$PY" server.py >"$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
     # ждём, пока порт начнёт отвечать: до 20 секунд по половине секунды
@@ -56,7 +80,24 @@ s.settimeout(0.5)
 sys.exit(0 if s.connect_ex(("127.0.0.1", int(sys.argv[1]))) == 0 else 1)
 PROBE
       then
-        echo "Запущен, pid $(cat "$PIDFILE"), порт $PORT. Лог: $LOGFILE"
+        VERSION=$("$PY" - "$PORT" 2>/dev/null <<'VER'
+import json, sys, urllib.request
+try:
+    with urllib.request.urlopen("http://127.0.0.1:%s/api/health" % sys.argv[1], timeout=3) as r:
+        print(json.load(r).get("version") or "")
+except Exception:
+    pass
+VER
+)
+        echo "Запущен, pid $(cat "$PIDFILE"), порт $PORT, версия ${VERSION:-неизвестна}. Лог: $LOGFILE"
+        if command -v git >/dev/null 2>&1 && [ -d .git ]; then
+          REMOTE=$(git ls-remote origin -h refs/heads/main 2>/dev/null | cut -c1-7)
+          LOCAL=$(git rev-parse --short=7 HEAD 2>/dev/null)
+          if [ -n "$REMOTE" ] && [ -n "$LOCAL" ] && [ "$REMOTE" != "$LOCAL" ]; then
+            echo "ВНИМАНИЕ: копия отстала от main ($LOCAL против $REMOTE)." >&2
+            echo "Обнови: ./run.sh --stop && git pull --ff-only && ./run.sh --background" >&2
+          fi
+        fi
         echo "Проверка: curl -s localhost:$PORT/api/health"
         echo "Опубликуй порт $PORT наружу — это и есть ссылка на дашборд."
         exit 0
