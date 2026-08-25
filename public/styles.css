@@ -45,6 +45,7 @@ a { color: inherit; text-decoration: none; }
 .brand-tile { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; border-radius: 11px; background: #fff; border: 1px solid var(--line); box-shadow: 0 2px 6px #1620330f; }
 
 .main-nav { margin-top: 8px; }
+.sidebar .build { margin: auto 0 4px; padding: 0 14px; color: #b3b9c6; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.02em; }
 .main-nav p { margin: 0 12px 10px; color: #a3a9b6; font-size: 10px; font-weight: 700; letter-spacing: 0.9px; }
 .main-nav a { display: flex; align-items: center; gap: 12px; height: 43px; margin: 3px 0; padding: 0 12px; border-radius: 10px; color: #656e82; font-size: 14px; }
 .main-nav a:hover { background: var(--soft); }

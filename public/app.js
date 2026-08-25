@@ -1219,6 +1219,18 @@ async function render() {
   if (!state.analysis && !state.loading) loadAnalysis(false);
 }
 
+// Версия развёрнутого кода в сайдбаре: при клоне на чужой сервер это
+// единственный способ увидеть с одного взгляда, что поднялось.
+(async () => {
+  try {
+    const h = await api("/api/health");
+    const el = $("#build");
+    if (el && h && h.version) el.textContent = "build " + h.version;
+  } catch (e) {
+    /* здоровье недоступно — просто не показываем версию */
+  }
+})();
+
 document.addEventListener("click", async (e) => {
   const target = e.target.closest("[data-act], [data-token]");
   if (!target) return;
